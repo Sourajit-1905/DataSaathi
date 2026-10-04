@@ -1,0 +1,323 @@
+
+
+datasaathi/
+│
+├── .github/                                        # GitHub Actions CI/CD pipelines
+│   └── workflows/
+│       ├── backend-ci.yml                          # Run pytest on every push to main/dev
+│       ├── frontend-ci.yml                         # Run lint + build check on every push
+│       └── deploy.yml                              # Deploy to production on release tag
+│
+├── docker/                                         # Docker configurations
+│   ├── backend.Dockerfile                          # Multi-stage build for FastAPI backend
+│   ├── frontend.Dockerfile                         # Nginx-served React build
+│   └── nginx.conf                                  # Nginx reverse proxy config (routes /api → backend)
+│
+├── docker-compose.yml                              # Local dev: spins up backend + frontend together
+├── docker-compose.prod.yml                         # Production compose (with env overrides)
+│
+├── .env.example                                    # Template for environment variables (committed)
+├── .env                                            # Actual secrets — NEVER committed (.gitignored)
+├── .gitignore                                      # Ignores: .env, __pycache__, node_modules, uploads/
+├── README.md                                       # Project overview, setup instructions, architecture
+├── CHANGELOG.md                                    # Version history
+│
+│
+├── backend/                                        # ── BACKEND ROOT ──────────────────────────────────
+│   │
+│   ├── main.py                                     # FastAPI app entry point; registers all routers + middleware
+│   ├── requirements.txt                            # All Python dependencies with pinned versions
+│   ├── requirements-dev.txt                        # Dev-only: pytest, httpx, black, ruff, mypy
+│   ├── .env.example                                # Backend env template (PORT, MAX_UPLOAD_MB, etc.)
+│   ├── pyproject.toml                              # Black + Ruff + MyPy config
+│   │
+│   ├── routers/                                    # FastAPI route definitions (thin layer — calls services)
+│   │   ├── __init__.py
+│   │   ├── dataset.py                              # /api/dataset/* — upload, preview, reset, info
+│   │   ├── profile.py                              # /api/profile/* — run, result, insights, quality
+│   │   ├── clean.py                                # /api/clean/* — recommend, preview, apply, undo, history
+│   │   ├── transform.py                            # /api/transform/* — apply, preview, undo, history
+│   │   ├── eda.py                                  # /api/eda/* — analyze, question, recommend-chart, insights
+│   │   ├── stats.py                                # /api/stats/* — recommend, test, question, history
+│   │   ├── nlp.py                                  # /api/nlp/* — detect-columns, run, question, insights
+│   │   ├── ml.py                                   # /api/ml/* — recommend, summary, models, roadmap
+│   │   ├── report.py                               # /api/report/* — generate, download, history-export
+│   │   └── ai.py                                   # /api/ai/* — chat, insights, explain, summarize
+│   │
+│   ├── services/                                   # Business logic — all heavy lifting lives here
+│   │   ├── __init__.py
+│   │   ├── session_service.py                      # Session lifecycle: create, load, save, reset, snapshot
+│   │   ├── profile_service.py                      # 22 profiling functions + run_full_profile()
+│   │   ├── clean_service.py                        # 9 cleaning operations: recommend + apply functions
+│   │   ├── transform_service.py                    # 25 transformation functions: apply_<n>()
+│   │   ├── eda_service.py                          # 14 EDA sub-modules + auto_insights + filters
+│   │   ├── stats_service.py                        # 21 statistical analysis functions (t-tests, ANOVA, etc.)
+│   │   ├── nlp_service.py                          # 27 NLP functions (sentiment, TF-IDF, LDA, embeddings)
+│   │   ├── ml_service.py                           # 19 ML strategy recommendation functions
+│   │   ├── report_service.py                       # Jinja2 HTML + WeasyPrint PDF report assembly
+│   │   └── ai_service.py                           # Gemini API calls: prompt building, response parsing, fallback logic
+│   │
+│   ├── models/                                     # Pydantic request/response schemas
+│   │   ├── __init__.py
+│   │   └── schemas.py                              # All request bodies + response models for every endpoint
+│   │
+│   ├── core/                                       # App-wide configuration and shared utilities
+│   │   ├── __init__.py
+│   │   ├── config.py                               # Settings via pydantic-settings (reads .env)
+│   │   ├── exceptions.py                           # Custom exception classes + FastAPI exception handlers
+│   │   ├── security.py                             # UUID validation, MIME type check, formula sanitizer
+│   │   ├── logging_config.py                       # Python logging setup (structured logs)
+│   │   ├── cache.py                                # In-memory cache dict wrappers (_profile_cache, etc.)
+│   │   └── gemini_client.py                        # Gemini SDK setup: API key from .env, retry logic, rate limit handling
+│   │
+│   ├── templates/                                  # Jinja2 HTML templates for report generation
+│   │   └── report_template.html                    # Full report HTML template (used by WeasyPrint for PDF)
+│   │
+│   ├── prompts/                                    # Gemini prompt templates (plain text, version-controlled)
+│   │   ├── profiling_insights.txt                  # Prompt: convert 22 profiling results → narrative insights
+│   │   ├── eda_question.txt                        # Prompt: answer user's natural language EDA question
+│   │   ├── stats_explain.txt                       # Prompt: explain statistical test result in plain English
+│   │   ├── clean_recommend.txt                     # Prompt: explain why a cleaning strategy is recommended
+│   │   ├── transform_recommend.txt                 # Prompt: explain why a transformation is recommended
+│   │   ├── ml_strategy.txt                         # Prompt: explain ML strategy tailored to user's stated goal
+│   │   └── report_summary.txt                      # Prompt: write Executive Summary from all stage summaries
+│   │
+│   ├── uploads/                                    # Runtime file storage — .gitignored
+│   │   ├── original/                               # {session_id}.csv — sacred, never mutated
+│   │   ├── working/                                # {session_id}.csv — current working copy
+│   │   ├── history/                                # {session_id}.json — operation log per session
+│   │   ├── snapshots/                              # {session_id}_snap.csv — undo snapshots
+│   │   └── reports/                                # {session_id}_report.pdf / .html
+│   │
+│   └── tests/                                      # pytest test suite
+│       ├── __init__.py
+│       ├── conftest.py                             # Shared fixtures: test client, sample DataFrames
+│       ├── fixtures/                               # Static test CSV files
+│       │   ├── sample_clean.csv                    # Clean dataset for baseline tests
+│       │   ├── sample_dirty.csv                    # Dataset with missing, duplicates, outliers
+│       │   └── sample_text.csv                     # Dataset with free-form text column for NLP tests
+│       ├── test_dataset.py                         # Upload, preview, reset endpoint tests
+│       ├── test_profiling.py                       # All 22 profiling functions return correct structure
+│       ├── test_cleaning.py                        # Undo restores correctly; preview does not save
+│       ├── test_transform.py                       # Transformation output shapes + undo
+│       ├── test_eda.py                             # Filter isolation; chart data structure
+│       ├── test_stats.py                           # t-test results match known values
+│       ├── test_nlp.py                             # Sentiment, TF-IDF, topic detection
+│       ├── test_ml.py                              # Problem type detection; no model training
+│       ├── test_report.py                          # PDF/HTML generation; skipped sections
+│       ├── test_security.py                        # Formula injection rejected; path not exposed
+│       └── test_ai.py                              # Gemini responses parse correctly; fallback triggers on API failure
+│
+│
+└── frontend/                                       # ── FRONTEND ROOT ─────────────────────────────────
+    │
+    ├── index.html                                  # Vite HTML entry point
+    ├── vite.config.js                              # Vite config (proxy /api → localhost:8000 in dev)
+    ├── tailwind.config.js                          # Tailwind content paths + theme extensions
+    ├── postcss.config.js                           # PostCSS (required by Tailwind)
+    ├── package.json                                # npm dependencies + scripts
+    ├── package-lock.json                           # Lockfile (committed)
+    ├── .eslintrc.cjs                               # ESLint rules
+    ├── .prettierrc                                 # Prettier formatting config
+    │
+    ├── public/                                     # Static assets (served as-is by Vite/Nginx)
+    │   ├── favicon.ico
+    │   └── logo.svg                                # DataSaathi logo
+    │
+    └── src/
+        │
+        ├── main.jsx                                # React entry — renders <App /> into #root
+        ├── App.jsx                                 # Router setup, ProtectedRoute, global providers
+        ├── index.css                               # Tailwind directives (@base, @components, @utilities)
+        │
+        ├── api/                                    # All API calls centralized here
+        │   └── api.js                              # Axios instance + interceptors + all API namespaces
+        │                                           # (datasetAPI, profileAPI, cleanAPI, transformAPI,
+        │                                           #  edaAPI, statsAPI, nlpAPI, mlAPI, reportAPI, aiAPI)
+        │
+        ├── context/                                # React context providers
+        │   └── SessionContext.jsx                  # Global session state: sessionId, metadata, stageStatus
+        │
+        ├── hooks/                                  # Custom React hooks
+        │   ├── useApi.js                           # Wraps API calls with loading + error + toast
+        │   ├── useSession.js                       # Shorthand hook for consuming SessionContext
+        │   └── useColumnFilter.js                  # Filter columns by type (numerical/categorical/datetime)
+        │
+        ├── pages/                                  # One file per route/stage
+        │   ├── Upload.jsx                          # Stage 1: drag-drop upload, preview table, session init
+        │   ├── AIChat.jsx                          # AI Stage: persistent chat interface powered by Gemini
+        │   ├── Profile.jsx                         # Stage 2: 22 profiling results, column drawer, insights
+        │   ├── Clean.jsx                           # Stage 3: issue list, strategy selector, apply/undo
+        │   ├── Transform.jsx                       # Stage 4: column cards, transform configurator, history
+        │   ├── EDA.jsx                             # Stage 5: 5-tab analysis, filter bar, chart views
+        │   ├── Stats.jsx                           # Stage 6: test builder, assumption check, results panel
+        │   ├── NLP.jsx                             # Stage 7: sentiment, keywords, topics, similarity
+        │   ├── MLStrategy.jsx                      # Stage 8: model cards, comparison table, roadmap
+        │   └── Report.jsx                          # Stage 9: section selector, preview, download
+        │
+        ├── components/                             # Reusable UI components
+        │   │
+        │   ├── layout/                             # Shell components
+        │   │   ├── Layout.jsx                      # Outer shell: Sidebar + Header + <Outlet />
+        │   │   ├── Sidebar.jsx                     # Navigation with stage status badges
+        │   │   └── Header.jsx                      # Dataset info bar + reset button
+        │   │
+        │   ├── common/                             # Generic reusable components
+        │   │   ├── LoadingSpinner.jsx              # Full-overlay spinner used during API calls
+        │   │   ├── ErrorBoundary.jsx               # React error boundary wrapping the app
+        │   │   ├── StageStatusBadge.jsx            # pending / in_progress / completed dot badge
+        │   │   ├── ProtectedRoute.jsx              # Redirects to / if no sessionId in context
+        │   │   ├── ConfirmModal.jsx                # Reusable confirmation dialog (used before apply/reset)
+        │   │   ├── ToastProvider.jsx               # Wraps react-toastify <ToastContainer />
+        │   │   ├── Pagination.jsx                  # Simple prev/next pagination for large tables
+        │   │   ├── EmptyState.jsx                  # Friendly empty state card with icon + message
+        │   │   └── HistoryPanel.jsx                # Reusable operation history list with Undo buttons
+        │   │
+        │   ├── upload/                             # Upload page components
+        │   │   ├── DropZone.jsx                    # react-dropzone area with drag feedback
+        │   │   ├── FileDetailsCard.jsx             # Filename, size, rows, columns after upload
+        │   │   └── PreviewTable.jsx                # First 10 rows, horizontally scrollable
+        │   │
+        │   ├── profile/                            # Profiling page components
+        │   │   ├── SummaryBanner.jsx               # 4 stat cards: rows, columns, quality, missing
+        │   │   ├── InsightsPanel.jsx               # Collapsible insights list with severity icons
+        │   │   ├── ColumnTable.jsx                 # Searchable + filterable column analysis table
+        │   │   ├── ColumnDetailDrawer.jsx          # Slide-in drawer with full column profiling data
+        │   │   └── FrequencyBarChart.jsx           # Tiny horizontal bar chart for category frequencies
+        │   │
+        │   ├── clean/                              # Cleaning page components
+        │   │   ├── IssueCard.jsx                   # Single issue card (severity color + count)
+        │   │   ├── IssueList.jsx                   # Left panel: all 9 issue type cards
+        │   │   ├── BeforeAfterBanner.jsx           # Original vs current row/missing/duplicate counts
+        │   │   ├── IssueDetailPanel.jsx            # Center panel: affected items + strategy selector
+        │   │   ├── BeforeAfterTable.jsx            # Side-by-side before/after rows (changed cells highlighted)
+        │   │   └── StrategySelector.jsx            # Dropdown with strategy options + descriptions
+        │   │
+        │   ├── transform/                          # Transformation page components
+        │   │   ├── ColumnCard.jsx                  # Column card with type badge + Add Transform button
+        │   │   ├── TransformConfigurator.jsx        # Dynamic transform options based on column type
+        │   │   ├── BinConfigurator.jsx             # Bin count + method selector for binning transform
+        │   │   ├── CategoryMapper.jsx              # Table: original value → new group mapping
+        │   │   ├── FormulaInput.jsx                # Text input with column name autocomplete
+        │   │   ├── PreviewStatsPanel.jsx           # Before/After stats comparison (mean, std, min, max)
+        │   │   └── DimReductionScatter.jsx         # 2D scatter plot for PCA/t-SNE/UMAP output
+        │   │
+        │   ├── eda/                                # EDA page components
+        │   │   ├── FilterBar.jsx                   # Collapsible filter builder (up to 5 filters)
+        │   │   ├── FilterRow.jsx                   # Single filter: column + operator + value + remove
+        │   │   ├── InsightTag.jsx                  # Colored tag badge (CORRELATION, TREND, etc.)
+        │   │   ├── QuestionInput.jsx               # Natural language question input with suggestion chips
+        │   │   └── charts/                         # EDA chart components (all Recharts-based)
+        │   │       ├── HistogramChart.jsx           # BarChart for numerical distributions
+        │   │       ├── BoxPlotChart.jsx             # Custom ComposedChart box plot implementation
+        │   │       ├── ScatterPlotChart.jsx         # ScatterChart with optional regression line
+        │   │       ├── CorrelationHeatmap.jsx       # Custom SVG/Recharts cell grid (blue-white-red)
+        │   │       ├── GroupedBarChart.jsx          # Grouped bar chart for bivariate cat vs cat
+        │   │       ├── LineChart.jsx                # Time series line chart with rolling average overlay
+        │   │       └── ParetoChart.jsx             # Bar + cumulative line chart (Pareto)
+        │   │
+        │   ├── stats/                              # Statistics page components
+        │   │   ├── TestBuilder.jsx                 # Research question input + manual test selector
+        │   │   ├── HypothesisCard.jsx              # Displays H₀ and H₁ as formatted text
+        │   │   ├── AssumptionPanel.jsx             # Normality, homogeneity, sample size checks
+        │   │   ├── TestResultCard.jsx              # Stat, p-value, effect size, conclusion + styling
+        │   │   ├── PostHocTable.jsx                # Tukey HSD results table (shown if ANOVA significant)
+        │   │   └── CIPlot.jsx                      # ComposedChart with confidence interval error bars
+        │   │
+        │   ├── nlp/                                # NLP page components
+        │   │   ├── TextQualityCard.jsx             # Quality score + breakdown (empty, duplicate, etc.)
+        │   │   ├── SentimentCards.jsx              # Positive / Negative / Neutral % stat cards
+        │   │   ├── KeywordBarChart.jsx             # Horizontal bar chart for TF-IDF keywords
+        │   │   ├── WordCloud.jsx                   # CSS-based word cloud (no external library)
+        │   │   ├── TopicCard.jsx                   # Single LDA topic card (keywords + proportion)
+        │   │   ├── SimilarityResult.jsx            # Matched record card with similarity score bar
+        │   │   └── ClusterCard.jsx                 # Cluster card (size + keywords + representative text)
+        │   │
+        │   ├── ml/                                 # ML Strategy page components
+        │   │   ├── ProblemBanner.jsx               # Detected problem type + target + override dropdowns
+        │   │   ├── ModelCard.jsx                   # Individual model card (suitability, dots, strengths)
+        │   │   ├── ModelComparisonTable.jsx         # Sortable full-width model comparison table
+        │   │   ├── TechniqueChecklist.jsx           # Recommended techniques with trigger reasons
+        │   │   ├── ImbalanceWarning.jsx             # Class imbalance alert panel
+        │   │   ├── ArchitectureDiagram.jsx          # Horizontal step-flow pipeline diagram (SVG/CSS)
+        │   │   └── RoadmapList.jsx                 # Numbered expandable roadmap steps
+        │   │
+        │   ├── report/                             # Report page components
+        │   │   ├── SectionChecklist.jsx            # Checkboxes per section with completion badges
+        │   │   ├── FormatSelector.jsx              # PDF / HTML radio toggle
+        │   │   ├── ReportPreview.jsx               # Inline iframe or rendered HTML preview
+        │   │   └── DownloadBar.jsx                 # Download buttons for PDF, HTML, JSON history
+        │   │
+        │   └── ai/                                 # AI chat components
+        │       ├── ChatWindow.jsx                  # Scrollable message thread (user + Gemini bubbles)
+        │       ├── ChatInput.jsx                   # Text input + send button + suggested prompts
+        │       ├── MessageBubble.jsx               # Single message bubble (user vs AI styling)
+        │       ├── AIInsightCard.jsx               # Structured insight card rendered inside chat thread
+        │       ├── SuggestedPrompts.jsx            # Context-aware prompt chips (changes per active stage)
+        │       └── AIStatusBadge.jsx               # Shows "Gemini · Free Tier" + rate limit warning if needed
+        │
+        └── utils/                                  # Pure utility functions (no React)
+            ├── formatters.js                       # Number, date, percentage formatting helpers
+            ├── colorScale.js                       # Color interpolation for heatmaps (blue-white-red)
+            ├── columnTypeHelpers.js                # Filter columns by type, get type badge color
+            └── constants.js                        # App-wide constants (stage names, severity colors, etc.)
+
+
+==============================================
+KEY ARCHITECTURAL NOTES
+==============================================
+
+SESSION FLOW
+  Upload → session_id (UUID) created → all subsequent API calls use session_id as path param
+  All files keyed by session_id. Session state lives in React SessionContext on the frontend.
+
+FILE SAFETY
+  uploads/original/{session_id}.csv  — written once on upload, NEVER modified
+  uploads/working/{session_id}.csv   — all clean/transform operations work on this
+  uploads/snapshots/{session_id}_snap.csv — overwritten before every apply (enables undo)
+  uploads/history/{session_id}.json  — append-only operation log
+
+CACHING STRATEGY
+  Profile results cached in backend memory (_profile_cache) — invalidated on any clean/transform apply
+  Frontend stores profile result in SessionContext — re-visit does not re-trigger API call
+  NLP embeddings: sampled to 2000 rows for datasets > 10,000 rows
+
+API CONVENTIONS
+  All endpoints prefixed /api/
+  Errors always return: { "error": "...", "detail": "...", "code": 4xx|5xx }
+  Never expose Python tracebacks or filesystem paths in responses
+  session_id validated as UUID format on every request
+
+DEPLOYMENT TARGETS
+  Local Dev   : docker-compose.yml — backend :8000, frontend :5173 (Vite dev server)
+  Production  : docker-compose.prod.yml — Nginx on :80/:443, reverse proxies /api → backend container
+  CI/CD       : GitHub Actions — test on push, deploy on release tag
+
+GEMINI AI INTEGRATION
+  Model             : Gemini 2.0 Flash (free tier)
+  Used for          : Profiling insights · EDA natural language questions · Stats plain English explanations
+                      Cleaning/Transform recommendation reasoning · ML strategy narrative · Report Executive Summary
+                      Persistent AI chat interface (AIChat page)
+  Data policy       : Raw user data NEVER sent to Gemini — only computed summaries, stats, and column names
+  Prompt location   : backend/prompts/*.txt — version-controlled, editable without code changes
+  Fallback          : If Gemini API fails or rate-limits → rule-based response returned automatically
+  Response format   : Gemini always prompted to return JSON — parsed and validated before returning to frontend
+  Auth              : GEMINI_API_KEY in .env — never committed, never exposed in API responses
+
+ENVIRONMENT VARIABLES (see .env.example)
+  BACKEND_PORT         — default 8000
+  MAX_UPLOAD_MB        — default 50
+  CORS_ORIGIN          — default http://localhost:5173
+  UPLOAD_DIR           — path to uploads/ folder
+  LOG_LEVEL            — INFO / DEBUG / WARNING
+  GEMINI_API_KEY       — Google AI Studio API key (free tier)
+  GEMINI_MODEL         — default gemini-2.0-flash
+  GEMINI_MAX_RETRIES   — default 3 (retries on rate limit before fallback)
+
+==============================================
+TOTAL STRUCTURE SUMMARY
+==============================================
+  Backend  : 10 routers · 10 services · 1 schema file · 5 core modules · 1 template · 7 prompts · 11 test files
+  Frontend : 10 pages · 8 component groups · 57+ components · 1 api module · 3 hooks · 2 contexts · 4 utils
+  DevOps   : 3 Dockerfiles · 2 compose files · 3 GitHub Actions workflows · Nginx config
+==============================================
