@@ -335,3 +335,181 @@ def suspicious_value_detection(df: pd.DataFrame) -> dict:
     return result
 
 
+# 12. Data Type Consistency
+
+def data_type_consistency(df: pd.DataFrame) -> list[dict]:
+    """
+    Checks whether the actual values in a column match its assigned data type and detects cases such as numerical values stored as text or inconsistent date formats.
+    """
+    inconsistent = []
+    for col in df.select_dtypes(include=["object"]).columns:
+        s = df[col].dropna()
+        if len(s) == 0:
+            continue
+
+        # Try numeric conversion
+        numeric_parsed = pd.to_numeric(s, errors="coerce")
+        numeric_rate = numeric_parsed.notna().sum() / len(s)
+        if numeric_rate >= 0.8:
+            inconsistent.append({
+                "column": col,
+                "current_type": "object",
+                "suggested_type": "numeric",
+                "parse_rate": round(float(numeric_rate), 2),
+            })
+            continue
+
+        # Try datetime conversion
+        try:
+            dt_parsed = pd.to_datetime(s, errors="coerce", infer_datetime_format=True)
+            dt_rate = dt_parsed.notna().sum() / len(s)
+            if dt_rate >= 0.8:
+                inconsistent.append({
+                    "column": col,
+                    "current_type": "object",
+                    "suggested_type": "datetime",
+                    "parse_rate": round(float(dt_rate), 2),
+                })
+        except Exception:
+            pass
+
+
+    return inconsistent
+
+# 13. Constant and Near-Constant Column Detection
+def constant_column_detection(df: pd.DataFrame) -> list[dict]:
+    """
+    Identifies columns containing only one value or where one value dominates almost the entire column. Such columns may provide little analytical value.
+    """
+    result = []
+    for col in df.columns:
+        if len(df) == 0:
+            continue
+        top_freq = df[col].value_counts(normalize=True, dropna=False).iloc[0]
+        if top_freq > 0.95:
+            top_val = df[col].value_counts(dropna=False).index[0]
+            result.append({
+                "column": col,
+                "dominant_value": str(top_val),
+                "frequency_pct": round(float(top_freq) * 100, 2),
+            })
+    return result
+
+# 14. Identifier Detection
+UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+ID_KEYWORDS = {"id", "key", "uuid", "code", "serial", "ref"}
+
+def identifier_detection(df: pd.DataFrame) -> list[dict]:
+    """
+    Attempts to identify columns that are likely to represent IDs, such as customer IDs, transaction IDs, serial numbers, or UUIDs, especially when they contain mostly or entirely unique values.
+    """
+    result = []
+
+    for col in df.columns:
+        col_lower = col.lower().replace("_", "").replace("-", "")
+        unique_ratio = df[col].nunique() / max(len(df), 1)
+
+        name_match = any(kw in col_lower for kw in ID_KEYWORDS)
+
+        sample = df[col].dropna().astype(str).head(20)
+
+        uuid_match = (
+            sample.apply(lambda v: bool(UUID_RE.match(v))).mean() >= 0.8
+        )
+
+        try:
+            numeric = pd.to_numeric(df[col].dropna(), errors="coerce").dropna()
+
+            sequential = (
+                len(numeric) > 1
+                and numeric.is_monotonic_increasing
+                and (numeric.diff().dropna() == 1).all()
+            )
+        except Exception:
+            sequential = False
+
+        if unique_ratio > 0.9 and (name_match or uuid_match or sequential):
+            result.append({
+                "column": col,
+                "unique_ratio": round(float(unique_ratio), 4),
+                "reason": (
+                    "name_keyword"
+                    if name_match
+                    else "uuid_pattern"
+                    if uuid_match
+                    else "sequential_int"
+                ),
+            })
+
+    return result
+
+# 15. Outlier Detection
+def outlier_detection(df: pd.DataFrame) -> dict:
+    """
+    Identifies unusually distant observations in numerical columns using statistical methods such as the Interquartile Range (IQR) or standard deviation-based methods. Outliers are flagged as potential observations for investigation rather than automatically treated as errors.
+    """
+
+    result = {}
+    for col in df.select_dtypes(include = [np.number]).columns:
+        s = df[col].dropna()
+        if(len(s) < 4) : continue
+
+        q1 = float(s.quantile(0.25))
+        q3 = float(s.quantile(0.75))
+
+        iqr = q3 - q1
+
+        lower = q1 - (1.5*iqr)
+        upper = q3 + (1.5*iqr)
+
+        outliers = s[(s<lower) | (s>upper)]
+
+        result[col] = {
+            "outlier_count": int(len(outliers)),
+            "pct": round(len(outliers) / len(s) * 100, 2),
+            "lower_bound": round(lower, 4),
+            "upper_bound": round(upper, 4),
+        }
+
+    return result
+
+
+# 16. Distribution Analysis
+
+def distribution_analysis(df: pd.DataFrame) -> dict:
+    """
+    Analyzes the distribution of numerical variables using measures such as skewness and 
+    basic distribution characteristics to identify symmetric, skewed, or highly concentrated data.
+    """    
+    result = {}
+
+    for col in df.select_dtypes(include=[np.number]).columns:
+        s = df[col].dropna()
+
+        if len(s) < 4:
+            continue
+
+        skew = float(s.skew())
+        kurt = float(s.kurtosis())
+
+        if abs(skew) < 0.5:
+            label = "symmetric"
+
+        elif abs(skew) <= 1.0:
+            label = "moderately skewed"
+
+        else:
+            label = "highly skewed"
+
+        result[col] = {
+            "skewness": round(skew, 4),
+            "kurtosis": round(kurt, 4),
+            "distribution_label": label,
+        }
+        
+    return result
+
