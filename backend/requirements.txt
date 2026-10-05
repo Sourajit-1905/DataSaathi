@@ -1,0 +1,39 @@
+# Core Framework  
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+
+# Data Processing 
+pandas==2.2.2
+numpy==1.26.4
+openpyxl==3.1.2
+xlrd==2.0.1
+
+# Scientific / ML 
+scipy==1.13.0
+scikit-learn==1.4.2
+
+# NLP 
+nltk==3.8.1
+vaderSentiment==3.3.2
+langdetect==1.0.9
+sentence-transformers==2.7.0
+
+#Statistics 
+pingouin==0.5.4
+statsmodels==0.14.2
+
+# Dimensionality Reduction 
+umap-learn==0.5.6
+
+# Report Generation 
+weasyprint==62.3
+jinja2==3.1.4
+
+# AI / Gemini 
+google-generativeai==0.7.2
+
+# Config & Utilities 
+python-dotenv==1.0.1
+pydantic==2.7.1
+pydantic-settings==2.2.1

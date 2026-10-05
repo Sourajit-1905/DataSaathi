@@ -2,3 +2,9 @@
 /prompts.docx
 /DataSaathi_BACKEND_Prompt.md
 /DataSaathi_FRONTEND_Prompt.mD
+.env*
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
