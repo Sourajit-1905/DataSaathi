@@ -134,38 +134,26 @@ def detect_categorical_columns(df: pd.DataFrame) -> list[dict]:
 
 # 5. Date/Time Column 
 
-def detect_datetime_columns(df: pd.DataFrame) ->list[dict]:
-    """
-    Detects columns containing dates, timestamps, or other temporal information and determines their date/time format.
-    """
+def detect_datetime_columns(df: pd.DataFrame) -> list[dict]:
     results = []
     for col in df.select_dtypes(include=["datetime64"]).columns:
-        results.append({
-            "column":col,
-            "inferred_format": "datetime64", "already_parsed": True
-        })
+        results.append({"column": col, "inferred_format": "datetime64", "already_parsed": True})
 
     for col in df.select_dtypes(include=["object"]).columns:
         sample = df[col].dropna().head(50)
-
         try:
-            parsed = pd.to_datetime(sample, _infer_semantic_label=True, errors = "coerce")
-
+            parsed = pd.to_datetime(sample, errors="coerce", format="mixed")
             success_rate = parsed.notna().sum() / max(len(sample), 1)
-
-            # If 80% or more of the non-null sample values parse cleanly, classify it as a datetime column
             if success_rate >= 0.8:
-                results.append(
-                    {
-                        "column": col,
-                        "inferred_format": "inferred",
-                        "already_parsed": False,
-                        "parse_success_rate": round(float(success_rate), 2),
-                    }
-                )
+                results.append({
+                    "column": col,
+                    "inferred_format": "inferred",
+                    "already_parsed": False,
+                    "parse_success_rate": round(float(success_rate), 2),
+                })
         except Exception:
             pass
-
+        
     return results
 
 # 6. Missing Value Analysis
@@ -361,7 +349,7 @@ def data_type_consistency(df: pd.DataFrame) -> list[dict]:
 
         # Try datetime conversion
         try:
-            dt_parsed = pd.to_datetime(s, errors="coerce", infer_datetime_format=True)
+            dt_parsed = pd.to_datetime(s, errors="coerce", format="mixed")
             dt_rate = dt_parsed.notna().sum() / len(s)
             if dt_rate >= 0.8:
                 inconsistent.append({
@@ -761,15 +749,15 @@ async def _generate_gemini_insights(all_results: dict) -> list[str] | None:
     Returns None on any failure so the caller can fall back to rule-based.
     """
     try:
-        import google.generativeai as genai
         from pathlib import Path
 
         api_key = settings.GEMINI_API_KEY
         if not api_key:
             return None
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(settings.GEMINI_MODEL)
+        from google import genai as google_genai
+
+        client = google_genai.Client(api_key=api_key)
 
         prompt_path = Path("prompts/profiling_insights.txt")
         if not prompt_path.exists():
@@ -800,7 +788,10 @@ async def _generate_gemini_insights(all_results: dict) -> list[str] | None:
         import json
         prompt = prompt_template.replace("{{PROFILING_SUMMARY}}", json.dumps(summary, indent=2))
 
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+        )
         raw = response.text.strip()
 
         # Strip markdown fences if present

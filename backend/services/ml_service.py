@@ -1,0 +1,1 @@
+# <name>_service.py — stub (implemented in later stages)
