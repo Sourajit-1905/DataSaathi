@@ -510,6 +510,371 @@ def distribution_analysis(df: pd.DataFrame) -> dict:
             "kurtosis": round(kurt, 4),
             "distribution_label": label,
         }
-        
+
     return result
 
+# 17. Categorical Distribution and Class Imbalance
+def categorical_imbalance(df: pd.DataFrame) -> dict:
+    """
+    Analyzes the frequency distribution of categorical variables and detects cases where one or more categories dominate the dataset. This is particularly useful for identifying class imbalance before machine learning.
+    """
+    result = {}
+
+    for col in df.select_dtypes(include=["object"]).columns:
+        vc = df[col].value_counts(normalize=True, dropna=True)
+
+        if len(vc) == 0:
+            continue
+        top_pct = round(float(vc.iloc[0]) * 100, 2)
+        result[col] = {
+            "top_category": str(vc.index[0]),
+            "top_pct": top_pct,
+            "is_imbalanced": top_pct > 80,
+        }
+    return result
+
+# 18. Date/Time Coverage Analysis
+
+def datetime_coverage(df: pd.DataFrame) -> dict:
+    """
+    For date/time columns, identifies the earliest and latest dates, total time coverage, and potential gaps or irregularities in the temporal data.
+    """
+    result = {}
+    for col in df.select_dtypes(include=["datetime64"]).columns:
+        s = df[col].dropna()
+        if len(s) < 2:
+            continue
+        s_sorted = s.sort_values()
+        total_days = (s_sorted.iloc[-1] - s_sorted.iloc[0]).days
+        diffs = s_sorted.diff().dropna()
+        median_gap = diffs.median().days if len(diffs) > 0 else 0
+        expected_count = total_days / max(median_gap, 1) if median_gap > 0 else len(s)
+        gap_count = max(0, int(expected_count - len(s)))
+        result[col] = {
+            "min_date": str(s_sorted.iloc[0].date()),
+            "max_date": str(s_sorted.iloc[-1].date()),
+            "total_days": total_days,
+            "estimated_gap_count": gap_count,
+        }
+
+    return result
+
+
+# 19. Initial Relationship Screening
+
+def initial_relationship_screening(df: pd.DataFrame) -> list[dict]:
+    """
+    Performs basic screening of relationships between numerical variables, such as correlation analysis, to identify potentially interesting relationships that can be investigated during Exploratory Data Analysis (EDA).
+    """
+    num_df = df.select_dtypes(include=[np.number])
+    if num_df.shape[1] < 2:
+        return []
+    # Cap at 20 columns for performance
+    if num_df.shape[1] > 20:
+        num_df = num_df.iloc[:, :20]
+
+    corr = num_df.corr()
+    pairs = []
+    cols = corr.columns.tolist()
+    for i in range(len(cols)):
+        for j in range(i + 1, len(cols)):
+            r = corr.iloc[i, j]
+            if abs(r) > 0.7 and not np.isnan(r):
+                pairs.append({
+                    "col1": cols[i],
+                    "col2": cols[j],
+                    "correlation": round(float(r), 4),
+                })
+    return pairs
+
+
+
+# 20. Potential Target Detection
+
+
+def potential_target_detection(
+    df: pd.DataFrame,
+    identifier_cols: list[str],
+    datetime_cols: list[str],
+    constant_cols: list[str],
+) -> list[dict]:
+    """
+    Identifies columns that could potentially serve as target variables for machine learning based on their data type, cardinality, and naming patterns. The system should recommend candidates rather than automatically selecting a target.
+    """
+    exclude = set(identifier_cols + datetime_cols + constant_cols)
+    candidates = []
+
+    for col in df.columns:
+        if col in exclude:
+            continue
+        missing_pct = df[col].isna().mean() * 100
+        if missing_pct > 30:
+            continue
+
+        unique = df[col].nunique()
+        dtype = df[col].dtype
+
+        if unique == 2:
+            score, suitability, reasoning = 90, "binary_classification", "Binary column — ideal classification target"
+
+        elif dtype == object and unique <= 10:
+            score, suitability, reasoning = 75, "multi_class_classification", f"Categorical with {unique} classes — good classification target"
+
+        elif dtype == object and unique <= 20:
+            score, suitability, reasoning = 60, "multi_class_classification", f"Categorical with {unique} classes — possible classification target"
+
+        elif np.issubdtype(dtype, np.number):
+            score, suitability, reasoning = 70, "regression", "Continuous numerical — good regression target"
+        else: continue
+
+        candidates.append({
+            "column": col,
+            "score": score,
+            "suitability": suitability,
+            "reasoning": reasoning,
+        })
+
+    candidates.sort(key=lambda x: x["score"], reverse=True)
+    return candidates[:3]
+
+
+# 21. Data Quality Summary
+
+
+def data_quality_summary(df: pd.DataFrame, all_results: dict) -> dict:
+    """
+    Generates an overall summary of the dataset's quality by combining detected issues such as missing values, duplicates, inconsistent data types, suspicious values, outliers, and class imbalance
+    """
+    score = 100
+    breakdown = []
+
+    missing = all_results.get("missing_values", {})
+    critical_missing = [c for c, v in missing.items() if v["is_critical"]]
+    if critical_missing:
+        score -= 20
+        breakdown.append(f"Critical missing (>30%): {critical_missing} (-20)")
+
+    moderate_missing = [c for c, v in missing.items() if 5 < v["pct"] <= 30]
+    deduction = min(len(moderate_missing) * 10, 30)
+    if deduction > 0:
+        score -= deduction
+        breakdown.append(f"Moderate missing columns: {len(moderate_missing)} (-{deduction})")
+
+    dups = all_results.get("duplicate_rows", {})
+    if dups.get("pct", 0) > 5:
+        score -= 10
+        breakdown.append("Duplicate rows > 5% (-10)")
+
+    suspicious = all_results.get("suspicious_values", {})
+    if suspicious:
+        score -= 10
+        breakdown.append("Suspicious values detected (-10)")
+
+    imbalance = all_results.get("categorical_imbalance", {})
+    imbalanced = [c for c, v in imbalance.items() if v["is_imbalanced"]]
+    if imbalanced:
+        score -= 5
+        breakdown.append(f"Imbalanced categories: {imbalanced} (-5)")
+
+    score = max(0, score)
+    if score >= 80:
+        label = "excellent"
+    elif score >= 60:
+        label = "good"
+    elif score >= 40:
+        label = "fair"
+    else:
+        label = "poor"
+
+    return {"score": score, "label": label, "breakdown": breakdown}
+
+
+
+# 22. Insights Generation (rule-based fallback)
+
+def _generate_rule_based_insights(all_results: dict) -> list[str]:
+    """
+    Converts profiling results into human-readable observations and warnings. For example, the system may report that a column has a high percentage of missing values, a dataset contains significant class imbalance, or a numerical variable is highly skewed
+    """
+    insights = []
+
+    missing = all_results.get("missing_values", {})
+    for col, v in missing.items():
+        if v["pct"] > 5:
+            strategy = "median imputation" if v["pct"] < 30 else "careful review or removal"
+            insights.append(
+                f"Column '{col}' has {v['pct']}% missing values — {strategy} is recommended."
+            )
+
+    dups = all_results.get("duplicate_rows", {})
+    if dups.get("count", 0) > 0:
+        insights.append(
+            f"The dataset contains {dups['count']} duplicate rows ({dups['pct']}%) — consider removing them."
+        )
+
+    dist = all_results.get("distribution_analysis", {})
+    for col, v in dist.items():
+        if abs(v["skewness"]) > 1:
+            direction = "right" if v["skewness"] > 0 else "left"
+            insights.append(
+                f"'{col}' is highly {direction}-skewed (skewness={v['skewness']}) — a log or power transform may help."
+            )
+
+    ids = all_results.get("identifier_columns", [])
+    for item in ids:
+        insights.append(
+            f"'{item['column']}' appears to be an identifier column and should likely be excluded from ML models."
+        )
+
+    imbalance = all_results.get("categorical_imbalance", {})
+    for col, v in imbalance.items():
+        if v["is_imbalanced"]:
+            insights.append(
+                f"'{col}' shows class imbalance: '{v['top_category']}' accounts for {v['top_pct']}% of records."
+            )
+
+    corr_pairs = all_results.get("correlation_pairs", [])
+    for pair in corr_pairs[:3]:
+        insights.append(
+            f"'{pair['col1']}' and '{pair['col2']}' are strongly correlated (r={pair['correlation']}) — consider dropping one for ML."
+        )
+
+    suspicious = all_results.get("suspicious_values", {})
+    for col, flags in suspicious.items():
+        for flag in flags[:1]:
+            insights.append(
+                f"'{col}' has {flag['flagged_count']} suspicious values: {flag['rule']}."
+            )
+
+    quality = all_results.get("quality_summary", {})
+    if quality.get("label") in ["fair", "poor"]:
+        insights.append(
+            f"Overall data quality is {quality['label']} (score: {quality['score']}/100). "
+            "Cleaning is strongly recommended before analysis."
+        )
+
+    return insights[:12] if insights else ["Dataset loaded. Run cleaning for a full quality assessment."]
+
+async def _generate_gemini_insights(all_results: dict) -> list[str] | None:
+    """
+    Send profiling summary to Gemini and get back a list of insight strings.
+    Returns None on any failure so the caller can fall back to rule-based.
+    """
+    try:
+        import google.generativeai as genai
+        from pathlib import Path
+
+        api_key = settings.GEMINI_API_KEY
+        if not api_key:
+            return None
+
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(settings.GEMINI_MODEL)
+
+        prompt_path = Path("prompts/profiling_insights.txt")
+        if not prompt_path.exists():
+            return None
+        prompt_template = prompt_path.read_text(encoding="utf-8")
+
+        # Build a compact summary to send — never raw data
+        summary = {
+            "dimensions": all_results.get("dimensions"),
+            "quality_summary": all_results.get("quality_summary"),
+            "missing_values": {
+                col: v for col, v in all_results.get("missing_values", {}).items()
+                if v["pct"] > 0
+            },
+            "duplicate_rows": all_results.get("duplicate_rows"),
+            "outlier_summary": {
+                col: v for col, v in all_results.get("outlier_detection", {}).items()
+                if v["outlier_count"] > 0
+            },
+            "distribution_analysis": all_results.get("distribution_analysis"),
+            "correlation_pairs": all_results.get("correlation_pairs"),
+            "identifier_columns": all_results.get("identifier_columns"),
+            "categorical_imbalance": all_results.get("categorical_imbalance"),
+            "suspicious_values": all_results.get("suspicious_values"),
+            "potential_targets": all_results.get("potential_targets"),
+        }
+
+        import json
+        prompt = prompt_template.replace("{{PROFILING_SUMMARY}}", json.dumps(summary, indent=2))
+
+        response = model.generate_content(prompt)
+        raw = response.text.strip()
+
+        # Strip markdown fences if present
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw)
+            raw = re.sub(r"\n?```$", "", raw)
+
+        parsed = json.loads(raw)
+        insights = parsed.get("insights", [])
+        if isinstance(insights, list) and len(insights) >= 3:
+            return insights
+
+    except Exception as e:
+        logger.warning(f"Gemini insights generation failed: {e}. Falling back to rule-based.")
+
+    return None
+
+async def run_full_profile(df: pd.DataFrame) -> dict:
+    """
+    Run all 22 profiling checks and return a combined result dict.
+    Gemini is called at the end to generate narrative insights.
+    Falls back to rule-based insights if Gemini is unavailable.
+    """
+    # Collect all algorithmic results first
+    identifier_cols_raw = identifier_detection(df)
+    identifier_col_names = [i["column"] for i in identifier_cols_raw]
+
+    datetime_cols_raw = detect_datetime_columns(df)
+    datetime_col_names = [d["column"] for d in datetime_cols_raw]
+
+    constant_cols_raw = constant_column_detection(df)
+    constant_col_names = [c["column"] for c in constant_cols_raw]
+
+    missing = missing_value_analysis(df)
+    dups = duplicate_row_detection(df)
+    suspicious = suspicious_value_detection(df)
+    imbalance = categorical_imbalance(df)
+    dist = distribution_analysis(df)
+    corr_pairs = initial_relationship_screening(df)
+    quality = data_quality_summary(df, {
+        "missing_values": missing,
+        "duplicate_rows": dups,
+        "suspicious_values": suspicious,
+        "categorical_imbalance": imbalance,
+    })
+
+    all_results = {
+        "dimensions": get_dimensions(df),
+        "column_identification": identify_columns(df),
+        "numerical_columns": detect_numerical_columns(df),
+        "categorical_columns": detect_categorical_columns(df),
+        "datetime_columns": datetime_cols_raw,
+        "missing_values": missing,
+        "cardinality": cardinality_analysis(df),
+        "duplicate_rows": dups,
+        "duplicate_columns": duplicate_column_detection(df),
+        "numerical_summary": numerical_statistical_summary(df),
+        "suspicious_values": suspicious,
+        "type_inconsistencies": data_type_consistency(df),
+        "constant_columns": constant_cols_raw,
+        "identifier_columns": identifier_cols_raw,
+        "outlier_detection": outlier_detection(df),
+        "distribution_analysis": dist,
+        "categorical_imbalance": imbalance,
+        "datetime_coverage": datetime_coverage(df),
+        "correlation_pairs": corr_pairs,
+        "potential_targets": potential_target_detection(
+            df, identifier_col_names, datetime_col_names, constant_col_names
+        ),
+        "quality_summary": quality,
+    }
+
+    gemini_insights = await _generate_gemini_insights(all_results)
+    all_results["insights"] = gemini_insights if gemini_insights else _generate_rule_based_insights(all_results)
+    all_results["insights_source"] = "gemini" if gemini_insights else "rule_based"
+
+    return all_results

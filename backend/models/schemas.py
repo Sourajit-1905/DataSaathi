@@ -59,3 +59,82 @@ class ResetResponse(BaseModel):
     status: str
     message: str
     session_id: str
+
+# Profile / Stage 2  
+
+class QualitySummary(BaseModel):
+    score: int
+    label: str
+    breakdown: list[str]
+
+
+class DimensionsSummary(BaseModel):
+    rows: int
+    columns: int
+    memory_mb: float
+    total_cells: int
+
+
+class MissingValueEntry(BaseModel):
+    count: int
+    pct: float
+    is_critical: bool
+
+
+class DuplicateRowSummary(BaseModel):
+    count: int
+    pct: float
+    sample_indices: list[int]
+
+
+class OutlierEntry(BaseModel):
+    outlier_count: int
+    pct: float
+    lower_bound: float
+    upper_bound: float
+
+
+class DistributionEntry(BaseModel):
+    skewness: float
+    kurtosis: float
+    distribution_label: str
+
+
+class CorrelationPair(BaseModel):
+    col1: str
+    col2: str
+    correlation: float
+
+
+class PotentialTarget(BaseModel):
+    column: str
+    score: int
+    suitability: str
+    reasoning: str
+
+
+class ProfileRunResponse(BaseModel):
+    session_id: str
+    status: str
+    quality_summary: QualitySummary
+    insights_source: str
+    insights_count: int
+
+
+class ProfileResultResponse(BaseModel):
+    session_id: str
+    profile: dict[str, Any]
+
+
+class InsightsResponse(BaseModel):
+    session_id: str
+    insights: list[str]
+    insights_source: str
+
+
+class QualityResponse(BaseModel):
+    session_id: str
+    quality_summary: QualitySummary
+    dimensions: DimensionsSummary
+    missing_values: dict[str, MissingValueEntry]
+    duplicate_rows: DuplicateRowSummary
