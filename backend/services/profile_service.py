@@ -167,3 +167,171 @@ def detect_datetime_columns(df: pd.DataFrame) ->list[dict]:
             pass
 
     return results
+
+# 6. Missing Value Analysis
+def missing_value_analysis(df: pd.DataFrame) ->dict:
+    """
+    Identifies columns containing missing or null values and reports both the number and percentage of missing values.
+    """
+    results = {}
+    for col in df.columns:
+        cnt = int(df[col].isna().sum())
+        percen = round(cnt / len(df) * 100, 2) if len(df) > 0 else 0.0
+
+        results[col] = {
+            "count": cnt,
+            "pct":percen,
+            "is_critical": percen > 30,
+        }
+
+    return results
+
+
+# 7. Unique Value and Cardinality Analysis
+def cardinality_analysis(df: pd.DataFrame)->dict:
+    """
+    Determines the number of unique values in each column and calculates its cardinality to identify low-, medium-, and high-cardinality features.
+    """
+    results = {}
+    
+    for col in df.columns:
+        unique = int(df[col].nunique())
+
+        if unique < 10: card_type = "low"
+        elif unique <= 100 : card_type = "medium"
+        else : card_type = "high"
+
+        results[col] = {
+            "unique_count": unique,
+            "cardinality_type": card_type
+        }
+
+    return results
+
+# 8. Duplicate Row Detection
+def duplicate_row_detection(df: pd.DataFrame) -> dict:
+    """
+    Identifies completely duplicated rows in the dataset and reports their count and percentage.
+    """
+    dup = df.duplicated()
+
+    count = int(dup.sum())
+    percent = round(count / len(df) * 100, 2) if len(df) > 0 else 0.0
+
+    sample_indices = df[dup].head(5).index.tolist()
+
+    return {
+        "count": count,
+        "pct": percent,
+        "sample_indices": [int(i) for i in sample_indices],
+    }
+
+# 9. Duplicate Column Detection
+def duplicate_column_detection(df: pd.DataFrame) ->list:
+    """
+    Checks whether two or more columns contain identical data and identifies redundant columns.
+    """
+    pairs = []
+    cols = df.columns.tolist()
+    for i in range(len(cols)):
+        for j in range(i + 1, len(cols)):
+            try:
+                if df[cols[i]].equals(df[cols[j]]):
+                    pairs.append({"col1": cols[i], "col2": cols[j]})
+            except Exception:
+                pass
+    return pairs
+
+# 10. Numerical Statistical Summary
+
+def numerical_statistical_summary(df:pd.DataFrame) -> dict:
+    """
+    Provides basic statistical information for numerical columns, including minimum, maximum, mean, median, standard deviation, and range.
+    """
+    results = {}
+    num_cols = df.select_dtypes(include=[np.number]).columns
+
+    for col in num_cols:
+        curr = df[col].dropna()
+
+        if(len(curr) == 0) : continue
+
+        results[col] = {
+            "min": round(float(curr.min()), 4),
+            "max": round(float(curr.max()), 4),
+            "mean": round(float(curr.mean()), 4),
+            "median": round(float(curr.median()), 4),
+            "std": round(float(curr.std()), 4),
+            "range": round(float(curr.max() - curr.min()), 4),
+            "q1": round(float(curr.quantile(0.25)), 4),
+            "q3": round(float(curr.quantile(0.75)), 4),
+        }
+
+    return results
+
+# 11. Suspicious and Invalid Value Detection
+def suspicious_value_detection(df: pd.DataFrame) -> dict:
+    """
+    Identifies potentially invalid, impossible, or suspicious values, such as negative ages, percentages above 100%, or values outside expected domain ranges.
+    """
+    result = {}
+    for col in df.select_dtypes(include=[np.number]).columns:
+        col_lower = col.lower()
+        flags = []
+
+        # --- Rule 1: Age validation ---
+        if "age" in col_lower:
+            mask = (df[col] < 0) | (df[col] > 120)
+
+            # Check if any rows violated the age condition
+            if mask.sum() > 0:
+                flags.append({
+                    "rule": "Age must be between 0 and 120",
+                    "flagged_count": int(mask.sum()),
+                    "sample_values": df[col][mask].head(3).tolist(),
+                })
+
+        # --- Rule 2: Percentage / Ratio validation ---
+        if any(k in col_lower for k in ["pct", "percent", "ratio", "percentage"]):
+            mask = (df[col] < 0) | (df[col] > 100)
+
+            if mask.sum() > 0:
+                # Append rule violation details to the flags list
+                flags.append({
+                    "rule": "Percentage must be between 0 and 100",
+                    "flagged_count": int(mask.sum()),
+                    "sample_values": df[col][mask].head(3).tolist(),
+                })
+
+        # --- Rule 3: Year validation ---
+        if "year" in col_lower:
+
+            mask = (df[col] < 1900) | (df[col] > current_year + 1)
+
+            if mask.sum() > 0:
+                flags.append({
+                    "rule": f"Year must be between 1900 and {current_year + 1}",
+                    "flagged_count": int(mask.sum()),
+                    "sample_values": df[col][mask].head(3).tolist(),
+                })
+
+        # --- Rule 4: Financial values non-negativity validation ---
+        if any(
+            k in col_lower
+            for k in ["price", "amount", "revenue", "salary", "income", "cost", "fee", "wage"]
+        ):
+            mask = df[col] < 0
+
+            if mask.sum() > 0:
+                flags.append({
+                    "rule": "Financial value must not be negative",
+                    "flagged_count": int(mask.sum()),
+                    "sample_values": df[col][mask].head(3).tolist(),
+                })
+
+        if flags:
+            result[col] = flags
+
+    return result
+
+
