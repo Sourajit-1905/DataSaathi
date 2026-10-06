@@ -135,3 +135,117 @@ For each issue:
 Gemini adds a plain English **"why"** explanation to every recommendation.
 
 **Fallback:** Rule-based explanation if Gemini is unavailable.
+
+
+
+# BACKEND STAGE 4 — Transform Service
+
+## What this stage is
+
+The second data modification stage. While cleaning fixes data problems, transformation engineers features by reshaping, scaling, encoding, and creating new columns.
+
+## What it does
+
+- Implements 25 transformation functions across 6 categories: scaling, encoding, binning, mathematical, datetime extraction, and dimensionality reduction
+- Previews transformations before applying them
+- Applies transformations to the working CSV with undo support
+- Maintains a per-session transformation history
+- Gemini explains why each transformation is recommended
+
+## Where it's used
+
+- **Frontend Transform page** — column cards, transform configurator, history panel
+- **Stage 8 (ML Strategy)** — transform history informs feature engineering recommendations
+- **Stage 9 (Report)** — transform history becomes Section 4 of the report
+- **Gemini** — receives column stats + chosen transform and explains the reasoning
+
+## Files in this stage
+
+1. `services/transform_service.py` — 25 transformation functions
+2. `prompts/transform_recommend.txt` — Gemini prompt template
+3. `routers/transform.py` — 5 endpoints
+4. `models/schemas.py` — updated with transform schemas
+5. `tests/test_transform.py` — verification tests
+
+## Features of Data Transformation
+
+| No. | Transformation | Brief Description |
+|---:|---|---|
+| **1** | **Normalization** | Scales numerical values to a common range, typically 0–1. |
+| **2** | **Standardization** | Transforms numerical features to have a mean near 0 and standard deviation near 1. |
+| **3** | **Robust Scaling** | Scales features using median and IQR, making it more resistant to outliers. |
+| **4** | **Encoding Categorical Variables** | Converts categorical values into numerical representations using methods such as one-hot, ordinal, label, frequency, or target encoding. |
+| **5** | **Date/Time Transformation** | Extracts useful features such as year, month, day, weekday, quarter, and hour from dates. |
+| **6** | **Text Transformation** | Converts text into analysis-ready representations using operations such as tokenization, cleaning, TF-IDF, or embeddings. |
+| **7** | **Aggregation** | Summarizes records using operations such as sum, mean, count, minimum, or maximum. |
+| **8** | **Binning** | Converts continuous numerical values into discrete intervals or groups. |
+| **9** | **Log and Mathematical Transformations** | Applies mathematical functions such as log, square-root, reciprocal, or power to modify distributions. |
+| **10** | **Power Transformations** | Uses methods such as Box-Cox or Yeo-Johnson to make numerical distributions more suitable for analysis. |
+| **11** | **Reshaping Data** | Changes dataset structure using operations such as pivot, melt, stack, and unstack. |
+| **12** | **Aggregation by Time** | Converts time-based records into different granularities such as weekly, monthly, quarterly, or yearly. |
+| **13** | **Calculated Columns** | Creates new columns using mathematical or logical expressions based on existing columns. |
+| **14** | **Feature Engineering** | Creates meaningful features such as ratios, differences, rates, rolling statistics, and lag features. |
+| **15** | **Feature Interaction** | Creates features representing relationships between multiple variables, such as Price × Quantity. |
+| **16** | **Numerical Feature Transformation** | Applies operations such as addition, subtraction, multiplication, division, square, or percentage change. |
+| **17** | **Category Grouping** | Combines multiple categories into broader user-defined groups. |
+| **18** | **Dimensionality Reduction** | Reduces numerical features using methods such as PCA, SVD, t-SNE, or UMAP. |
+| **19** | **Feature Selection** | Identifies and excludes potentially unnecessary features using statistical, correlation, model-based, or user-defined criteria. |
+| **20** | **Transformation Preview** | Shows the expected effect of a transformation before it is applied. |
+| **21** | **Transformation History** | Records every transformation applied to the dataset for reproducibility. |
+| **22** | **Before-and-After Comparison** | Compares dataset structure and statistics before and after transformation. |
+| **23** | **Transformation Validation** | Verifies that the transformed dataset has valid values, types, features, and no unintended data loss. |
+| **24** | **User-Controlled Transformation** | Allows users to select columns, configure transformations, preview, apply, reject, undo, or reset changes. |
+| **25** | **Transformation Summary** | Generates a summary of transformed columns, created features, encoded variables, scaling operations, and extracted date features. |
+
+## Transform Service
+
+Implements 25 transformation functions across 6 categories:
+
+### Scaling
+
+- **T1** — Min-Max Normalisation
+- **T2** — Z-Score Standardisation
+- **T3** — Robust Scaler
+- **T4** — Log Transform
+- **T5** — Power Transform (Box-Cox / Yeo-Johnson)
+
+### Encoding
+
+- **T6** — Label Encoding
+- **T7** — One-Hot Encoding
+- **T8** — Ordinal Encoding
+- **T9** — Frequency Encoding
+- **T10** — Target Encoding (mean target per category)
+
+### Binning
+
+- **T11** — Equal-Width Binning
+- **T12** — Equal-Frequency Binning (Quantile)
+- **T13** — Custom Threshold Binning
+
+### Mathematical
+
+- **T14** — Polynomial Features (degree 2, single column)
+- **T15** — Interaction Term (`col_a * col_b`)
+- **T16** — Custom Formula Column
+- **T17** — Lag Feature (time-series)
+- **T18** — Rolling Mean Feature
+
+### Datetime
+
+- **T19** — Extract Year
+- **T20** — Extract Month
+- **T21** — Extract Day
+- **T22** — Extract Day-of-Week
+- **T23** — Extract Hour
+
+### Dimensionality
+
+- **T24** — PCA (2 components)
+- **T25** — Flag column as excluded from ML
+
+## Data Safety
+
+All `apply_*()` functions return a **new DataFrame** — the original is never mutated.
+
+A snapshot is taken by the router before calling `apply_*()`.
