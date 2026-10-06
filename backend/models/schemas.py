@@ -238,3 +238,79 @@ class CleanHistoryResponse(BaseModel):
     session_id: str
     history: list[CleanHistoryEntry]
     total_operations: int
+
+# Transform / Stage 4 
+
+class ColumnStats(BaseModel):
+    column: str
+    dtype: str
+    mean: Optional[float] = None
+    std: Optional[float] = None
+    min: Optional[float] = None
+    max: Optional[float] = None
+    skewness: Optional[float] = None
+    has_negative: Optional[bool] = None
+    has_zero: Optional[bool] = None
+    unique_count: Optional[int] = None
+    top_values: Optional[list[Any]] = None
+
+
+class TransformRecommendation(BaseModel):
+    column: str
+    recommended_transform: str
+    available_transforms: list[str]
+    stats: dict[str, Any]
+    explanation: str
+
+
+class TransformPreviewStats(BaseModel):
+    before: Optional[dict[str, Any]] = None
+    after: Optional[dict[str, Any]] = None
+    note: Optional[str] = None
+    new_columns: Optional[list[str]] = None
+    rows_before: Optional[int] = None
+    rows_after: Optional[int] = None
+    cols_before: Optional[int] = None
+    cols_after: Optional[int] = None
+
+
+class TransformApplyResponse(BaseModel):
+    session_id: str
+    status: str
+    transform_type: str
+    column: str
+    rows_before: int
+    rows_after: int
+    cols_before: int
+    cols_after: int
+    new_columns: list[str]
+    note: Optional[str] = None
+
+
+class TransformUndoResponse(BaseModel):
+    session_id: str
+    status: str
+    message: str
+
+
+class TransformHistoryEntry(BaseModel):
+    stage: str
+    transform_type: str
+    column: str
+    options: Optional[dict[str, Any]] = None
+    rows_before: int
+    rows_after: int
+    cols_before: int
+    cols_after: int
+    new_columns: list[str]
+    timestamp: str
+
+
+class TransformHistoryResponse(BaseModel):
+    session_id: str
+    history: list[TransformHistoryEntry]
+    total_operations: int
+
+
+
+

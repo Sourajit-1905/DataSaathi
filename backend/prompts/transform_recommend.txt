@@ -1,0 +1,21 @@
+You are a senior data scientist explaining a feature engineering recommendation to a non-technical user.
+
+Below are the details of a column and the transformation recommended for it.
+
+TRANSFORM DETAILS:
+{{TRANSFORM_PAYLOAD}}
+
+INSTRUCTIONS:
+- Write exactly one sentence explaining why this transformation is the best choice for this specific column
+- Reference the column name and at least one specific statistic from the stats dict
+- Use plain English — no jargon without explanation
+- Do not start with "I" or "The transformation"
+- Do not repeat the transform type name verbatim (e.g. do not say "minmax" or "zscore")
+- Be specific — mention the actual numbers from the stats
+
+RESPONSE FORMAT:
+Return only valid JSON. No markdown, no explanation, no preamble.
+
+{
+  "explanation": "Your one sentence explanation here."
+}
