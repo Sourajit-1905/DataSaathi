@@ -501,3 +501,311 @@ def apply_type_conversion(df: pd.DataFrame, column: str, target_type: str) -> pd
     return df
 
 
+# 6.String Standardisation
+
+def detect_string_issues(df: pd.DataFrame) -> list[dict]:
+    results = []
+    for col in df.select_dtypes(include=["object"]).columns:
+        s = df[col].dropna().astype(str)
+        if len(s) == 0 : continue
+
+        whitespace_count = int(s.apply(lambda x: x != x.strip()).sum())
+        mixed_case = int(s.nunique()) != int(s.str.lower().nunique())
+
+        if whitespace_count > 0 or mixed_case:
+            results.append({
+                "column": col,
+                "whitespace_count": whitespace_count,
+                "mixed_case": mixed_case,
+            })
+
+    return results
+
+
+def apply_string_standardisation(df: pd.DataFrame, column: str, strategy: str) -> pd.DataFrame:
+    if column not in df.columns:
+        raise ColumnNotFoundError(column)
+
+    df = df.copy()
+    if strategy == "trim_whitespace":
+        df[column] = df[column].astype(str).str.strip()
+    elif strategy == "lowercase":
+        df[column] = df[column].astype(str).str.lower().str.strip()
+    elif strategy == "titlecase":
+        df[column] = df[column].astype(str).str.title().str.strip()
+
+    return df
+
+
+# 7. Constant Column Removal
+
+def detect_constant_columns(df: pd.DataFrame) -> list[dict]:
+    results = []
+    for col in df.columns:
+        if len(df) == 0:
+            continue
+        top_freq = df[col].value_counts(normalize=True, dropna=False).iloc[0]
+        if top_freq > 0.95:
+            top_val = df[col].value_counts(dropna=False).index[0]
+            results.append({
+                "column": col,
+                "dominant_value": str(top_val),
+                "frequency_pct": round(float(top_freq) * 100, 2),
+            })
+
+    return results
+
+
+def apply_drop_column(df: pd.DataFrame, column: str) -> pd.DataFrame:
+    if column not in df.columns:
+        raise ColumnNotFoundError(column)
+    return df.drop(columns=[column])
+
+
+# 8. Identifier Column Removal
+
+from services.profile_service import identifier_detection
+
+def detect_identifier_columns(df: pd.DataFrame) -> list[dict]:
+    return identifier_detection(df)
+
+
+
+# C9 — Negative Value Treatment
+
+
+def _normalize_column_name(column: str) -> str:
+    """Converts a column name into a normalized form for keyword inspection."""
+    name = str(column).lower().strip()
+    name = re.sub(r"[^a-z0-9]+", "_", name)
+    return name.strip("_")
+
+
+def _contains_keyword(name: str, keywords: list[str]) -> bool:
+    """Checks whether any keyword occurs as a token or substring in the normalized column name."""
+    return any(keyword in name for keyword in keywords)
+
+
+def _infer_negative_semantics(column: str, series: pd.Series) -> tuple[str, str, str]:
+    
+    name = _normalize_column_name(column)
+
+    # 1. Category / label encoding (-1/0/1)
+    unique_values = set(series.dropna().unique())
+    if (
+        len(unique_values) <= 3
+        and -1 in unique_values
+        and unique_values.issubset({-1, 0, 1})
+    ):
+        return (
+            "encoded",
+            "high",
+            "Values resemble a categorical/binary encoding such as -1/0/1.",
+        )
+
+    # 2. Strongly signed concepts (negative values are meaningful)
+    signed_keywords = [
+        "temperature", "temp",
+        "latitude", "longitude", "lat", "lon", "lng",
+        "x_coordinate", "y_coordinate", "z_coordinate",
+        "delta", "change", "difference", "diff", "variation", "deviation",
+        "growth", "growth_rate", "return", "return_pct", "return_percent",
+        "profit", "pnl", "net_profit", "net_income", "balance",
+        "residual", "prediction_error", "error", "bias", "offset",
+        "z_score", "zscore", "standardized", "standardised", "centered", "centred",
+        "log", "ln",
+        "embedding", "latent", "principal_component", "component", "pca",
+        "velocity", "acceleration", "displacement", "signed_distance", "direction",
+        "waveform", "signal", "amplitude",
+    ]
+    if _contains_keyword(name, signed_keywords):
+        return (
+            "signed",
+            "high",
+            "Negative values are likely semantically meaningful for this type of feature.",
+        )
+
+    # 3. Strongly non-negative concepts
+    non_negative_keywords = [
+        "price", "amount", "salary", "income", "revenue", "cost", "fee",
+        "wage", "expense", "payment", "tax", "budget",
+        "count", "number", "quantity", "qty", "total", "units", "items",
+        "frequency_count", "occurrences",
+        "age",
+        "weight", "mass", "height", "length", "width", "breadth", "thickness",
+        "area", "volume", "size", "diameter", "radius", "perimeter",
+        "distance", "duration", "elapsed_time", "time_elapsed", "wait_time",
+        "response_time", "latency", "delay",
+        "wavelength", "frequency", "energy", "calories", "steps", "dosage", "concentration",
+        "pixel", "intensity", "brightness",
+        "probability", "prob", "confidence", "proportion",
+        "inventory", "stock", "remaining", "available",
+        "days", "hours", "minutes", "seconds",
+        "rank", "position_index", "row_number",
+    ]
+    if _contains_keyword(name, non_negative_keywords):
+        if "percent" in name or "percentage" in name or name.endswith("_pct"):
+            return (
+                "non_negative",
+                "medium",
+                "The column appears to represent a percentage/proportion.",
+            )
+        return (
+            "non_negative",
+            "high",
+            "Negative values are generally not meaningful for this type of quantity.",
+        )
+
+    # 4. Ambiguous — cannot reliably infer from name alone
+    return (
+        "ambiguous",
+        "low",
+        "Column semantics cannot be reliably inferred from its name.",
+    )
+
+
+def _is_tiny_negative_noise(series: pd.Series) -> bool:
+    """Detects negative values extremely close to zero — likely floating-point noise."""
+    negative_values = series[series < 0]
+    if negative_values.empty:
+        return False
+    scale = max(float(series.abs().median()), 1.0)
+    tolerance = max(1e-12, scale * 1e-10)
+    return bool((negative_values.abs() <= tolerance).all())
+
+
+def detect_negative_values(df: pd.DataFrame) -> list[dict]:
+    results = []
+    for col in df.select_dtypes(include=[np.number]).columns:
+        s = df[col].dropna()
+        if len(s) == 0:
+            continue
+        negative_count = int((s < 0).sum())
+        if negative_count == 0:
+            continue
+        negative_pct = round(negative_count / len(s) * 100, 2)
+        semantic_class, confidence, reason = _infer_negative_semantics(col, s)
+        tiny_negative_noise = _is_tiny_negative_noise(s)
+        results.append({
+            "column": col,
+            "negative_count": negative_count,
+            "negative_pct": negative_pct,
+            "minimum_value": round(float(s.min()), 6),
+            "maximum_value": round(float(s.max()), 6),
+            "semantic_class": semantic_class,
+            "semantic_confidence": confidence,
+            "semantic_reason": reason,
+            "tiny_negative_noise": tiny_negative_noise,
+        })
+    return results
+
+
+async def recommend_negative_values(df: pd.DataFrame, column: str) -> dict:
+    if column not in df.columns:
+        raise ColumnNotFoundError(column)
+    if not pd.api.types.is_numeric_dtype(df[column]):
+        raise ValueError(f"Negative value treatment requires a numeric column: {column}")
+
+    s = df[column].dropna()
+    if len(s) == 0:
+        return {
+            "column": column,
+            "issue_type": "negative_values",
+            "recommended_strategy": "keep",
+            "available_strategies": ["keep"],
+            "stats": {"negative_count": 0, "negative_pct": 0.0},
+            "explanation": "The column contains no non-null values.",
+        }
+
+    negative_count = int((s < 0).sum())
+    negative_pct = round(negative_count / len(s) * 100, 2)
+    semantic_class, confidence, reason = _infer_negative_semantics(column, s)
+    tiny_negative_noise = _is_tiny_negative_noise(s)
+
+    # Decision logic
+    if negative_count == 0:
+        strategy = "keep"
+    elif tiny_negative_noise:
+        strategy = "set_zero"
+    elif semantic_class == "signed":
+        strategy = "keep"
+    elif semantic_class == "encoded":
+        strategy = "flag_only"
+    elif semantic_class == "non_negative":
+        strategy = "set_nan"
+    else:
+        strategy = "flag_only"
+
+    stats = {
+        "negative_count": negative_count,
+        "negative_pct": negative_pct,
+        "minimum_value": round(float(s.min()), 6),
+        "maximum_value": round(float(s.max()), 6),
+        "semantic_class": semantic_class,
+        "semantic_confidence": confidence,
+        "semantic_reason": reason,
+        "tiny_negative_noise": tiny_negative_noise,
+    }
+
+    explanation = await _get_gemini_explanation("negative_values", column, strategy, stats)
+    if not explanation:
+        explanation = _rule_based_explanation("negative_values", column, strategy, stats)
+
+    return {
+        "column": column,
+        "issue_type": "negative_values",
+        "recommended_strategy": strategy,
+        "available_strategies": ["keep", "set_zero", "set_nan", "drop_rows", "abs_value", "flag_only"],
+        "stats": stats,
+        "explanation": explanation,
+    }
+
+
+def apply_negative_values(df: pd.DataFrame, column: str, strategy: str) -> pd.DataFrame:
+    if column not in df.columns:
+        raise ColumnNotFoundError(column)
+
+    df = df.copy()
+
+    if strategy == "keep":
+        pass
+
+    elif strategy == "set_zero":
+        df[column] = df[column].clip(lower=0)
+
+    elif strategy == "set_nan":
+        df.loc[df[column] < 0, column] = np.nan
+
+    elif strategy == "drop_rows":
+        df = df[df[column] >= 0]
+
+    elif strategy == "abs_value":
+        df[column] = df[column].abs()
+
+    elif strategy == "flag_only":
+        flag_column = f"{column}_negative_flag"
+        df[flag_column] = (df[column] < 0).astype(int)
+
+    else:
+        raise ValueError(f"Unknown negative-value strategy: {strategy}")
+
+    return df
+
+
+
+# Master — get all issues in one call
+
+
+def get_all_issues(df: pd.DataFrame) -> dict:
+   
+    return {
+        "missing_numerical": detect_missing_numerical(df),
+        "missing_categorical": detect_missing_categorical(df),
+        "duplicates": detect_duplicates(df),
+        "outliers": detect_outliers(df),
+        "type_inconsistencies": detect_type_inconsistencies(df),
+        "string_issues": detect_string_issues(df),
+        "constant_columns": detect_constant_columns(df),
+        "identifier_columns": detect_identifier_columns(df),
+        "negative_values": detect_negative_values(df),
+    }
