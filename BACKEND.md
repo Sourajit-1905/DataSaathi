@@ -46,92 +46,92 @@ Runs 22 profiling checks — dimensions, column types, missing values, duplicate
 
 The Data Profiling module analyzes the uploaded dataset to understand its structure, quality, characteristics, and potential issues before further analysis.
 
-### 1. Dataset Dimensions
-
-Determines the number of rows, columns, dataset size, and memory usage.
-
-### 2. Column Identification and Meaning
-
-Identifies columns and estimates their semantic meaning from names and values.
-
-### 3. Numerical Column Detection
-
-Identifies columns containing numerical data such as measurements, prices, ages, or quantities.
-
-### 4. Categorical Column Detection
-
-Identifies columns containing discrete categorical values such as gender, city, or department.
-
-### 5. Date/Time Column Detection
-
-Detects date/time columns and identifies their formats.
-
-### 6. Missing Value Analysis
-
-Reports the number and percentage of missing values in each column.
-
-### 7. Unique Value and Cardinality Analysis
-
-Calculates unique values and cardinality to identify low-, medium-, and high-cardinality features.
-
-### 8. Duplicate Row Detection
-
-Identifies and reports completely duplicated rows.
-
-### 9. Duplicate Column Detection
-
-Identifies columns containing identical data and potential redundancy.
-
-### 10. Numerical Statistical Summary
-
-Provides minimum, maximum, mean, median, standard deviation, and range for numerical columns.
-
-### 11. Suspicious and Invalid Value Detection
-
-Flags potentially invalid or suspicious values, such as negative ages or percentages above 100%.
-
-### 12. Data Type Consistency
-
-Checks whether column values match their assigned data types and detects inconsistent formats.
-
-### 13. Constant and Near-Constant Column Detection
-
-Identifies columns with one value or a highly dominant value that may provide little analytical value.
-
-### 14. Identifier Detection
-
-Identifies columns likely to represent IDs based on names and uniqueness patterns.
-
-### 15. Outlier Detection
-
-Flags unusual numerical observations using methods such as IQR or standard deviation.
-
-### 16. Distribution Analysis
-
-Analyzes numerical distributions using skewness and other basic characteristics.
-
-### 17. Categorical Distribution and Class Imbalance
-
-Analyzes category frequencies and identifies potential class imbalance.
-
-### 18. Date/Time Coverage Analysis
-
-Reports date ranges, time coverage, and potential temporal gaps or irregularities.
-
-### 19. Initial Relationship Screening
-
-Performs basic relationship analysis between numerical variables, such as correlation analysis.
-
-### 20. Potential Target Detection
-
-Identifies possible machine learning target columns based on data type, cardinality, and naming patterns.
-
-### 21. Data Quality Summary
-
-Combines detected issues into an overall summary of dataset quality.
-
-### 22. Automatic Profiling Insights
+| No. | Feature | Description |
+|---:|---|---|
+| 1 | **Dataset Dimensions** | Determines the number of rows, columns, dataset size, and memory usage. |
+| 2 | **Column Identification and Meaning** | Identifies columns and estimates their semantic meaning from names and values. |
+| 3 | **Numerical Column Detection** | Identifies columns containing numerical data such as measurements, prices, ages, or quantities. |
+| 4 | **Categorical Column Detection** | Identifies columns containing discrete categorical values such as gender, city, or department. |
+| 5 | **Date/Time Column Detection** | Detects date/time columns and identifies their formats. |
+| 6 | **Missing Value Analysis** | Reports the number and percentage of missing values in each column. |
+| 7 | **Unique Value and Cardinality Analysis** | Calculates unique values and cardinality to identify low-, medium-, and high-cardinality features. |
+| 8 | **Duplicate Row Detection** | Identifies and reports completely duplicated rows. |
+| 9 | **Duplicate Column Detection** | Identifies columns containing identical data and potential redundancy. |
+| 10 | **Numerical Statistical Summary** | Provides minimum, maximum, mean, median, standard deviation, and range for numerical columns. |
+| 11 | **Suspicious and Invalid Value Detection** | Flags potentially invalid or suspicious values, such as negative ages or percentages above 100%. |
+| 12 | **Data Type Consistency** | Checks whether column values match their assigned data types and detects inconsistent formats. |
+| 13 | **Constant and Near-Constant Column Detection** | Identifies columns with one value or a highly dominant value that may provide little analytical value. |
+| 14 | **Identifier Detection** | Identifies columns likely to represent IDs based on names and uniqueness patterns. |
+| 15 | **Outlier Detection** | Flags unusual numerical observations using methods such as IQR or standard deviation. |
+| 16 | **Distribution Analysis** | Analyzes numerical distributions using skewness and other basic characteristics. |
+| 17 | **Categorical Distribution and Class Imbalance** | Analyzes category frequencies and identifies potential class imbalance. |
+| 18 | **Date/Time Coverage Analysis** | Reports date ranges, time coverage, and potential temporal gaps or irregularities. |
+| 19 | **Initial Relationship Screening** | Performs basic relationship analysis between numerical variables, such as correlation analysis. |
+| 20 | **Potential Target Detection** | Identifies possible machine learning target columns based on data type, cardinality, and naming patterns. |
+| 21 | **Data Quality Summary** | Combines detected issues into an overall summary of dataset quality. |
+| 22 | **Automatic Profiling Insights** | Converts profiling results into human-readable observations and warnings. |
 
 Converts profiling results into human-readable observations and warnings.
 
 The profiling results provide the foundation for Data Cleaning, EDA, Statistical Analysis, Machine Learning, and AI-based Data Insights.
+
+
+# BACKEND STAGE 3 — Dataset Cleaning
+
+## What this stage is
+
+The first stage where the dataset is actually **modified**. It takes the issues identified during profiling and lets the user apply fixes to the working copy of the data.
+
+## What it does
+
+- Detects 9 categories of data quality issues in the working dataset
+- Recommends a strategy for each issue algorithmically (e.g. median for skewed columns, mode for categorical)
+- Previews what the data will look like **before** applying any change
+- Applies the chosen strategy to the working CSV
+- Supports **undo** via snapshot restore
+- Maintains a full operation history
+- Gemini adds a plain English explanation of **why** each strategy is recommended
+
+## Where it's used
+
+- **Frontend Clean page** — the entire cleaning workflow
+- **Stage 4 (Transform)** — cleaning must happen before transformation
+- **Stage 9 (Report)** — cleaning history becomes Section 3 of the report
+- **Gemini** — receives the issue + chosen strategy and explains the reasoning in plain English
+
+## Files in this stage
+
+1. `services/clean_service.py` — 9 issue detectors + recommend + apply + undo
+2. `prompts/clean_recommend.txt` — Gemini prompt template
+3. `routers/clean.py` — 6 endpoints
+4. `models/schemas.py` — updated with cleaning schemas
+5. `tests/test_cleaning.py` — verification tests
+
+## Cleaning Operations
+
+Implements 9 cleaning operations:
+
+| ID | Cleaning Operation | Brief Explanation |
+|---|---|---|
+| **C1** | Missing values (numerical) | Handles missing numerical values using strategies such as mean, median, or other suitable methods. |
+| **C2** | Missing values (categorical) | Fills missing categorical values using methods such as mode or a dedicated category. |
+| **C3** | Duplicate rows | Detects and removes completely duplicated records from the dataset. |
+| **C4** | Outlier treatment | Identifies extreme values and applies a selected strategy such as removal, capping, or transformation. |
+| **C5** | Type conversion | Converts incorrectly typed columns into appropriate numeric or datetime formats. |
+| **C6** | String standardisation | Cleans inconsistent text values using trimming and case standardisation. |
+| **C7** | Constant / near-constant column removal | Removes columns with little or no variation that provide minimal analytical value. |
+| **C8** | Identifier column removal | Removes ID-like columns that are unlikely to provide useful predictive information. |
+| **C9** | Negative value treatment | Detects invalid negative values and applies an appropriate correction or treatment strategy. |
+
+## Cleaning Workflow
+
+For each issue:
+
+- `detect_*()` → finds affected rows/columns
+- `recommend_*()` → suggests a strategy algorithmically
+- `preview_*()` → returns before/after sample **without saving**
+- `apply_*()` → applies the strategy to the working CSV (snapshot taken first)
+
+Gemini adds a plain English **"why"** explanation to every recommendation.
+
+**Fallback:** Rule-based explanation if Gemini is unavailable.

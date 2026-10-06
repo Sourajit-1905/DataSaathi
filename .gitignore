@@ -8,3 +8,8 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+
+# Ignore everything inside uploads recursively
+uploads
+
