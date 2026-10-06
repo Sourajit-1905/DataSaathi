@@ -188,12 +188,41 @@ async def recommend_missing_numerical(df: pd.DataFrame, column: str) -> dict:
         "explanation": explanation,
     }
 
+def _sanitize_for_json(records: list[dict]) -> list[dict]:
+    """Replace NaN/Inf float values with None so the result is JSON serializable."""
+    import math
+    sanitized = []
+    for row in records:
+        clean_row = {}
+        for k, v in row.items():
+            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                clean_row[k] = None
+            else:
+                clean_row[k] = v
+        sanitized.append(clean_row)
+    return sanitized
+
+
 def preview_missing_numerical(df: pd.DataFrame, column: str, strategy: str, fill_value: float = 0.0) -> dict:
     if column not in df.columns:
         raise ColumnNotFoundError(column)
 
     affected = df[df[column].isna()].head(5).copy()
-    before = affected[[column]].copy()
+    before_records = affected[[column]].to_dict(orient="records")
+
+    if strategy in ("drop_rows", "drop_column"):
+        return {
+            "column": column,
+            "strategy": strategy,
+            "affected_rows": int(df[column].isna().sum()),
+            "before": [],
+            "after": [],
+            "note": (
+                f"This will drop {int(df[column].isna().sum())} rows."
+                if strategy == "drop_rows"
+                else "This will remove the column entirely."
+            ),
+        }
 
     s = df[column].dropna()
     if strategy == "mean":
@@ -202,29 +231,20 @@ def preview_missing_numerical(df: pd.DataFrame, column: str, strategy: str, fill
         val = s.median()
     elif strategy == "constant":
         val = fill_value
-    elif strategy in ("drop_rows", "drop_column"):
-        return {
-            "column": column,
-            "strategy": strategy,
-            "affected_rows": int(df[column].isna().sum()),
-            "before": [],
-            "after": [],
-            "note": f"This will {'drop ' + str(int(df[column].isna().sum())) + ' rows' if strategy == 'drop_rows' else 'remove the column entirely'}.",
-        }
     else:
         val = s.median()
 
-    after = before.copy()
-    after[column] = round(float(val), 4)
+    after_records = [{column: round(float(val), 4)} for _ in before_records]
 
     return {
         "column": column,
         "strategy": strategy,
         "fill_value": round(float(val), 4),
         "affected_rows": int(df[column].isna().sum()),
-        "before": before.to_dict(orient="records"),
-        "after": after.to_dict(orient="records"),
+        "before": _sanitize_for_json(before_records),
+        "after": _sanitize_for_json(after_records),
     }
+
 
 def apply_missing_numerical(df: pd.DataFrame, column: str, strategy: str, fill_value: float = 0.0) -> pd.DataFrame:
     if column not in df.columns:
@@ -493,9 +513,10 @@ def apply_type_conversion(df: pd.DataFrame, column: str, target_type: str) -> pd
         raise ColumnNotFoundError(column)
 
     df = df.copy()
-    if target_type == "numeric":
-        df[column] = pd.to_numeric(df[column], errors="coerce")
-    elif target_type == "datetime":
+    if target_type == "to_numeric":
+        converted = pd.to_numeric(df[column], errors="coerce")
+        df[column] = converted.astype("float64")
+    elif target_type == "to_datetime":
         df[column] = pd.to_datetime(df[column], errors="coerce", format="mixed")
 
     return df

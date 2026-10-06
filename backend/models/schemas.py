@@ -138,3 +138,103 @@ class QualityResponse(BaseModel):
     dimensions: DimensionsSummary
     missing_values: dict[str, MissingValueEntry]
     duplicate_rows: DuplicateRowSummary
+
+
+# Clean / Stage 3 
+
+class MissingNumericalIssue(BaseModel):
+    column: str
+    missing_count: int
+    missing_pct: float
+    skewness: float
+
+
+class MissingCategoricalIssue(BaseModel):
+    column: str
+    missing_count: int
+    missing_pct: float
+    mode: str
+
+
+class DuplicateIssue(BaseModel):
+    duplicate_count: int
+    duplicate_pct: float
+    sample_rows: list[dict[str, Any]]
+
+
+class OutlierIssue(BaseModel):
+    column: str
+    outlier_count: int
+    outlier_pct: float
+    lower_bound: float
+    upper_bound: float
+
+
+class StringIssue(BaseModel):
+    column: str
+    whitespace_count: int
+    mixed_case: bool
+
+
+class ConstantColumnIssue(BaseModel):
+    column: str
+    dominant_value: str
+    frequency_pct: float
+
+
+class NegativeValueIssue(BaseModel):
+    column: str
+    negative_count: int
+    negative_pct: float
+    minimum_value: float
+    maximum_value: float
+    semantic_class: str
+    semantic_confidence: str
+    semantic_reason: str
+    tiny_negative_noise: bool
+
+
+class RecommendationResult(BaseModel):
+    issue_type: str
+    column: Optional[str] = None
+    recommended_strategy: str
+    available_strategies: list[str]
+    explanation: str
+    stats: Optional[dict[str, Any]] = None
+
+
+class CleanApplyResponse(BaseModel):
+    session_id: str
+    status: str
+    issue_type: str
+    strategy: str
+    column: Optional[str] = None
+    rows_before: int
+    rows_after: int
+    cols_before: int
+    cols_after: int
+    warning: Optional[str] = None
+
+
+class CleanUndoResponse(BaseModel):
+    session_id: str
+    status: str
+    message: str
+
+
+class CleanHistoryEntry(BaseModel):
+    stage: str
+    issue_type: str
+    column: Optional[str] = None
+    strategy: str
+    rows_before: int
+    rows_after: int
+    cols_before: int
+    cols_after: int
+    timestamp: str
+
+
+class CleanHistoryResponse(BaseModel):
+    session_id: str
+    history: list[CleanHistoryEntry]
+    total_operations: int

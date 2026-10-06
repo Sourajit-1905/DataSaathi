@@ -29,6 +29,33 @@ from core.exceptions import (
     generic_exception_handler,
 )
 
+from fastapi.responses import JSONResponse
+import math
+import json
+
+class NaNSafeJSONResponse(JSONResponse):
+    def render(self, content) -> bytes:
+        return json.dumps(
+            content,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=None,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+    @staticmethod
+    def _replace_nan(obj):
+        if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+            return None
+        elif isinstance(obj, dict):
+            return {k: NaNSafeJSONResponse._replace_nan(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [NaNSafeJSONResponse._replace_nan(v) for v in obj]
+        return obj
+
+    def render(self, content) -> bytes:
+        clean = NaNSafeJSONResponse._replace_nan(content)
+        return json.dumps(clean, ensure_ascii=False).encode("utf-8")
 #  Routers 
 from routers import dataset, profile, clean, transform, eda, stats, nlp, ml, report, ai
 
@@ -60,6 +87,7 @@ app = FastAPI(
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
     lifespan=lifespan,
+    default_response_class=NaNSafeJSONResponse,
 )
 
 #  CORS 
@@ -100,3 +128,5 @@ app.include_router(ai.router)
 def health_check():
     """Simple liveness check."""
     return {"status": "ok", "version": "1.0.0"}
+
+
