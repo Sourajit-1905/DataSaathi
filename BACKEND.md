@@ -249,3 +249,56 @@ Implements 25 transformation functions across 6 categories:
 All `apply_*()` functions return a **new DataFrame** — the original is never mutated.
 
 A snapshot is taken by the router before calling `apply_*()`.
+
+
+
+# BACKEND STAGE 5 — EDA Service
+
+## What this stage is
+
+The first pure analysis stage after cleaning and transformation. No data is modified here — the working CSV remains read-only. It explores the data, relationships, patterns, and anomalies before formal statistical testing.
+
+## What it does
+
+- Implements 14 EDA sub-modules covering univariate, bivariate, time-series, multivariate, and outlier analysis
+- Supports up to 5 simultaneous user-defined filters without modifying the working CSV
+- Generates 8–12 algorithmic insights and rewrites them into a narrative using Gemini
+- Answers natural language questions through Gemini and routes them to the appropriate analysis function
+- Recommends suitable chart types for column combinations
+- Maintains per-session history of analyses, filters, and questions
+- Generates an end-of-stage summary of major findings
+
+## Where it's used
+
+- **Frontend EDA page** — 5-tab analysis interface with filter bar
+- **Stage 6 (Statistics)** — EDA findings guide statistical test recommendations
+- **Stage 8 (ML Strategy)** — correlation findings and target distribution inform model selection
+- **Stage 9 (Report)** — EDA results become Section 5 of the final report
+- **Gemini** — powers natural language questions and the auto-insights narrative
+
+## Files in this stage
+
+1. `services/eda_service.py` — 14 EDA sub-modules + filter engine + auto-insights + Gemini question answering
+2. `prompts/eda_question.txt` — Gemini prompt template for natural language question answering
+3. `routers/eda.py` — 5 endpoints (analyze, question, recommend-chart, insights, history)
+4. `models/schemas.py` — updated with EDA schemas
+5. `tests/test_eda.py` — verification tests
+
+## Full EDA Function Map
+
+| Module | Functions |
+|---|---|
+| **E1 — Numerical Univariate** | Mean, median, mode, variance, standard deviation, min, max, range, percentiles (P25/50/75/90/95/99), IQR, skewness, kurtosis, distribution label, histogram data, box plot statistics, density data |
+| **E2 — Categorical Univariate** | Frequency table, proportions, most/least common categories, category count, Pareto data, rare category detection |
+| **E3 — Numerical vs Numerical** | Pearson and Spearman correlation, scatter plot data, trend detection, regression line |
+| **E4 — Numerical vs Categorical** | Group-wise mean, median, min, max, standard deviation, percentiles, box plot by category, distribution comparison, group difference detection |
+| **E5 — Categorical vs Categorical** | Contingency table, cross-tabulation, category-wise proportions, association analysis, chi-square recommendation |
+| **E6 — Time-Based EDA** | Trend over time, daily/weekly/monthly/quarterly/yearly aggregation, rolling statistics, growth rate, period-over-period comparison, peak/low detection, time gap detection |
+| **E7 — Multivariate** | Correlation heatmap data, pairwise relationships, grouped multivariate comparisons |
+| **E8 — Outlier Investigation** | IQR-based outlier visualization data, z-score analysis, extreme value investigation, outlier contribution |
+| **E9 — Auto Insights** | Algorithmically generated insights + Gemini narrative |
+| **E10 — NL Question** | Gemini-powered natural language question answering |
+| **E11 — Chart Recommendation** | Recommends chart types based on column types and the user's question |
+| **E12 — Filters** | Supports up to 5 simultaneous filters without modifying the working CSV |
+| **E13 — EDA History** | Maintains per-session history of all analyses performed |
+| **E14 — EDA Summary** | Generates an end-of-stage summary of all major findings |
