@@ -302,3 +302,38 @@ The first pure analysis stage after cleaning and transformation. No data is modi
 | **E12 — Filters** | Supports up to 5 simultaneous filters without modifying the working CSV |
 | **E13 — EDA History** | Maintains per-session history of all analyses performed |
 | **E14 — EDA Summary** | Generates an end-of-stage summary of all major findings |
+
+
+
+
+# BACKEND STAGE 6 — Statistics Service
+
+## What this stage is
+
+The formal hypothesis testing stage. While EDA explores patterns informally, Stage 6 applies statistical tests with assumption checks, effect sizes, and plain English explanations.
+
+## What it does
+
+- Recommends appropriate statistical tests based on the research question and data characteristics
+- Checks assumptions such as normality, homogeneity of variance, and sample size
+- Implements 21 statistical test functions covering parametric, non-parametric, correlation, and categorical tests
+- Computes effect sizes alongside test results
+- Generates plain English explanations of results using Gemini
+- Maintains per-session statistics history
+
+## Where it's used
+
+- **Frontend Stats page** — test builder, assumption checker, results panel, and post-hoc table
+- **Stage 8 (ML Strategy)** — statistical significance findings inform feature selection recommendations
+- **Stage 9 (Report)** — statistics results become Section 6 of the report
+- **Gemini** — generates the plain English explanation for each test result
+
+## Files in this stage
+
+1. `services/stats_service.py` — 21 statistical functions + recommender + assumption checker
+2. `prompts/stats_explain.txt` — Gemini prompt for plain English explanations
+3. `routers/stats.py` — 4 endpoints
+4. `models/schemas.py` — updated with stats schemas
+5. `tests/test_stats.py` — verification tests
+
+
