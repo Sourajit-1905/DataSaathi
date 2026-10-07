@@ -542,5 +542,649 @@ def categorical_vs_categorical(df:DataFrame, col_a:str, col_b:str) ->str:
 
 
 
+# 6 Time-Based EDA
+
+def time_based_eda(
+    df: DataFrame,
+    date_col: str,
+    value_col: str,
+    freq: str = "M",
+) -> dict:
+    """
+    Time-series EDA for a date + value column pair.
+    freq: D=daily, W=weekly, M=monthly, Q=quarterly, Y=yearly
+    Returns trend, aggregations, growth rate, rolling stats,
+    peak/low detection, time gap detection.
+    """
+    for col in [date_col, value_col]:
+        if col not in df.columns:
+            return {"error": f"Column '{col}' not found."}
+
+    df_t = df[[date_col, value_col]].copy()
+    df_t[date_col] = pd.to_datetime(df_t[date_col], errors="coerce", format="mixed")
+    df_t = df_t.dropna(subset=[date_col, value_col])
+    df_t = df_t.sort_values(date_col)
+
+    if len(df_t) < 2:
+        return {"error": "Not enough valid date-value pairs for time analysis."}
+
+    # Aggregation
+    freq_map = {"D": "D", "W": "W", "M": "ME", "Q": "QE", "Y": "YE"}
+    resample_freq = freq_map.get(freq.upper(), "ME")
+
+    agg = df_t.set_index(date_col)[value_col].resample(resample_freq).agg(
+        ["sum", "mean", "count"]
+    ).reset_index()
+    agg.columns = ["date", "sum", "mean", "count"]
+    agg["date"] = agg["date"].dt.strftime("%Y-%m-%d")
+
+    trend_data = [
+        {
+            "date": row["date"],
+            "sum": round(float(row["sum"]), 4),
+            "mean": round(float(row["mean"]), 4),
+            "count": int(row["count"]),
+        }
+        for _, row in agg.iterrows()
+    ]
+
+    # Growth rate (period-over-period)
+    sums = agg["sum"].tolist()
+    growth_rates = []
+    for i in range(1, len(sums)):
+        if sums[i - 1] != 0:
+            gr = round((sums[i] - sums[i - 1]) / abs(sums[i - 1]) * 100, 2)
+        else:
+            gr = None
+        growth_rates.append({"period": agg["date"].iloc[i], "growth_pct": gr})
+
+    # Rolling mean (3-period)
+    rolling = (
+        df_t.set_index(date_col)[value_col]
+        .resample(resample_freq)
+        .mean()
+        .rolling(3, min_periods=1)
+        .mean()
+        .reset_index()
+    )
+    rolling.columns = ["date", "rolling_mean"]
+    rolling["date"] = rolling["date"].dt.strftime("%Y-%m-%d")
+    rolling_data = [
+        {"date": row["date"], "rolling_mean": round(float(row["rolling_mean"]), 4)}
+        for _, row in rolling.iterrows()
+    ]
+
+    # Peak and low detection
+    agg_sums = agg.set_index("date")["sum"]
+    peak_period = str(agg_sums.idxmax())
+    low_period = str(agg_sums.idxmin())
+
+    # Time gap detection
+    dates_sorted = df_t[date_col].sort_values()
+    diffs = dates_sorted.diff().dropna()
+    median_gap = diffs.median()
+    large_gaps = diffs[diffs > median_gap * 3]
+    gap_count = len(large_gaps)
+
+    # Overall trend direction
+    if len(sums) >= 2:
+        first_half = np.mean(sums[: len(sums) // 2])
+        second_half = np.mean(sums[len(sums) // 2 :])
+        if second_half > first_half * 1.05:
+            trend_direction = "upward"
+        elif second_half < first_half * 0.95:
+            trend_direction = "downward"
+        else:
+            trend_direction = "stable"
+    else:
+        trend_direction = "insufficient data"
+
+    return {
+        "date_col": date_col,
+        "value_col": value_col,
+        "freq": freq.upper(),
+        "n_records": len(df_t),
+        "date_range": {
+            "min": str(df_t[date_col].min().date()),
+            "max": str(df_t[date_col].max().date()),
+            "total_days": int((df_t[date_col].max() - df_t[date_col].min()).days),
+        },
+        "trend_data": trend_data,
+        "growth_rates": growth_rates,
+        "rolling_mean": rolling_data,
+        "peak_period": peak_period,
+        "low_period": low_period,
+        "trend_direction": trend_direction,
+        "time_gaps": {
+            "large_gap_count": gap_count,
+            "median_gap_days": round(float(median_gap.days), 1) if hasattr(median_gap, "days") else None,
+        },
+    }
+
+# 7 Multivariate Analysis
+
+def multivariate_analysis(df: DataFrame, columns: list[str] = None) -> dict:
+    """
+    Correlation heatmap + pairwise relationships for numerical columns.
+    Caps at 20 columns for performance.
+    """
+    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    if columns:
+        num_cols = [c for c in columns if c in df.columns and pd.api.types.is_numeric_dtype(df[c])]
+
+    num_cols = num_cols[:20]
+
+    if len(num_cols) < 2:
+        return {"error": "Need at least 2 numerical columns for multivariate analysis."}
+
+    sub = df[num_cols].dropna()
+
+    # Correlation matrix
+    corr = sub.corr()
+    heatmap_data = []
+    for i, row_col in enumerate(corr.columns):
+        for j, col_col in enumerate(corr.columns):
+            val = corr.iloc[i, j]
+            if not np.isnan(val):
+                heatmap_data.append({
+                    "row": row_col,
+                    "col": col_col,
+                    "value": round(float(val), 4),
+                })
+
+    # Strong pairs (|r| > 0.7, excluding diagonal)
+    strong_pairs = []
+    for i in range(len(num_cols)):
+        for j in range(i + 1, len(num_cols)):
+            r = corr.iloc[i, j]
+            if not np.isnan(r) and abs(r) > 0.7:
+                strong_pairs.append({
+                    "col1": num_cols[i],
+                    "col2": num_cols[j],
+                    "correlation": round(float(r), 4),
+                })
+
+    # Pairwise summary
+    pairwise = []
+    for i in range(len(num_cols)):
+        for j in range(i + 1, len(num_cols)):
+            r = corr.iloc[i, j]
+            if not np.isnan(r):
+                abs_r = abs(r)
+                strength = (
+                    "strong" if abs_r >= 0.7
+                    else "moderate" if abs_r >= 0.4
+                    else "weak" if abs_r >= 0.2
+                    else "negligible"
+                )
+                pairwise.append({
+                    "col1": num_cols[i],
+                    "col2": num_cols[j],
+                    "r": round(float(r), 4),
+                    "strength": strength,
+                    "direction": "positive" if r > 0 else "negative",
+                })
+
+    return {
+        "columns_analysed": num_cols,
+        "n_columns": len(num_cols),
+        "heatmap_data": heatmap_data,
+        "strong_pairs": strong_pairs,
+        "pairwise_summary": pairwise,
+        "correlation_matrix": {
+            col: {c: round(float(corr.loc[col, c]), 4) for c in num_cols}
+            for col in num_cols
+        },
+    }
+
+
+
+
+# 8 Outlier Investigation
+
+
+def outlier_investigation(df:DataFrame, column: str)->dict:
+    """
+    Detailed outlier analysis for a numerical column.
+    IQR + Z-score methods, extreme value investigation,
+    outlier contribution to mean/sum.
+    """
+    if column not in df.columns:
+        return {"error": f"Column '{column}' not found."}
+
+    s = df[column].dropna()
+    if len(s) < 4:
+        return {"error": "Not enough values for outlier analysis."}
+
+
+    # IQR method
+    q1 = float(s.quantile(0.25))
+    q3 = float(s.quantile(0.75))
+
+    iqr = q3 - q1
+
+    lower_iqr = q1 - 1.5*iqr
+    upper_iqr = q3 + 1.5*iqr
+
+    iqr_outliers = s[(s < lower_iqr) | (s > upper_iqr)]
+
+    # Z Sc0re Method
+    z_scores = np.abs(scipy_stats.zscore(s))
+    z_score_outlier_mask = z_scores > 3
+    zscore_outliers = s[z_score_outlier_mask]
+
+    # Extreme values (top/bottom 5)
+    extreme_high = s.nlargest(5).tolist()
+    extreme_low = s.nsmallest(5).tolist()
+
+    # Outlier contribution
+    total_sum = float(s.sum())
+    outlier_sum = float(iqr_outliers.sum())
+    contribution_pct = round(outlier_sum / total_sum * 100, 2) if total_sum != 0 else 0
+
+    mean_with = round(float(s.mean()), 4)
+    mean_without = round(float(s[~((s < lower_iqr) | (s > upper_iqr))].mean()), 4)
+    mean_impact = round(abs(mean_with - mean_without), 4)
+
+    return {
+        "column": column,
+        "total_values": len(s),
+        "iqr_method": {
+            "lower_bound": round(lower_iqr, 4),
+            "upper_bound": round(upper_iqr, 4),
+            "outlier_count": int(len(iqr_outliers)),
+            "outlier_pct": round(len(iqr_outliers) / len(s) * 100, 2),
+            "outlier_sample": [round(float(v), 4) for v in iqr_outliers.head(10).tolist()],
+        },
+        "zscore_method": {
+            "threshold": 3.0,
+            "outlier_count": int(len(zscore_outliers)),
+            "outlier_pct": round(len(zscore_outliers) / len(s) * 100, 2),
+            "outlier_sample": [round(float(v), 4) for v in zscore_outliers.head(10).tolist()],
+        },
+        "extreme_values": {
+            "top_5": [round(float(v), 4) for v in extreme_high],
+            "bottom_5": [round(float(v), 4) for v in extreme_low],
+        },
+        "outlier_contribution": {
+            "sum_contribution_pct": contribution_pct,
+            "mean_with_outliers": mean_with,
+            "mean_without_outliers": mean_without,
+            "mean_impact": mean_impact,
+        },
+    }
+
+
+
+# 9 Auto Insights
+
+def _generate_rule_based_eda_insights(df: pd.DataFrame) -> list[str]:
+    insights = []
+    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    cat_cols = df.select_dtypes(include=["object"]).columns.tolist()
+
+    # Skewness insights
+    for col in num_cols[:5]:
+        s = df[col].dropna()
+        if len(s) < 4:
+            continue
+        skew = float(s.skew())
+        if abs(skew) > 1:
+            direction = "right" if skew > 0 else "left"
+            insights.append(
+                f"'{col}' is highly {direction}-skewed (skewness={skew:.2f}) — "
+                f"consider a log or power transform before modelling."
+            )
+
+    # Categorical dominance
+    for col in cat_cols[:3]:
+        vc = df[col].value_counts(normalize=True)
+        if len(vc) > 0 and vc.iloc[0] >= 0.75:
+            insights.append(
+                f"'{vc.index[0]}' dominates '{col}' with "
+                f"{vc.iloc[0]*100:.1f}% of records."
+            )
+
+    # Strong correlations
+    if len(num_cols) >= 2:
+        sub = df[num_cols[:10]].dropna()
+        if len(sub) > 3:
+            corr = sub.corr()
+            for i in range(len(num_cols[:10])):
+                for j in range(i + 1, len(num_cols[:10])):
+                    r = corr.iloc[i, j]
+                    if not np.isnan(r) and abs(r) > 0.7:
+                        direction = "positive" if r > 0 else "negative"
+                        insights.append(
+                            f"'{num_cols[i]}' and '{num_cols[j]}' have a strong "
+                            f"{direction} correlation (r={r:.2f})."
+                        )
+
+    # Missing value pattern
+    missing = df.isnull().mean() * 100
+    high_missing = missing[missing > 20]
+    for col, pct in high_missing.items():
+        insights.append(
+            f"'{col}' has {pct:.1f}% missing values — "
+            f"this may affect analysis reliability."
+        )
+
+    # Outlier summary
+    for col in num_cols[:3]:
+        s = df[col].dropna()
+        if len(s) < 4:
+            continue
+        q1 = s.quantile(0.25)
+        q3 = s.quantile(0.75)
+        iqr_val = q3 - q1
+        outlier_pct = ((s < q1 - 1.5*iqr_val) | (s > q3 + 1.5*iqr_val)).mean() * 100
+        if outlier_pct > 5:
+            insights.append(
+                f"'{col}' has {outlier_pct:.1f}% outliers by IQR — "
+                f"investigate before modelling."
+            )
+
+    return insights[:12] if insights else [
+        "Dataset loaded successfully. Run individual analyses for detailed insights."
+    ]
+
+
+async def generate_eda_insights(df: pd.DataFrame) -> dict:
+    """
+    Generate EDA insights — Gemini narrative if available,
+    rule-based fallback otherwise.
+    """
+    rule_insights = _generate_rule_based_eda_insights(df)
+
+    try:
+        from google import genai as google_genai
+
+        api_key = settings.GEMINI_API_KEY
+        if not api_key:
+            return {"insights": rule_insights, "source": "rule_based"}
+
+        prompt_path = Path("prompts/eda_question.txt")
+        if not prompt_path.exists():
+            return {"insights": rule_insights, "source": "rule_based"}
+
+        # Build compact summary for Gemini
+        num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        cat_cols = df.select_dtypes(include=["object"]).columns.tolist()
+
+        summary = {
+            "shape": {"rows": len(df), "columns": len(df.columns)},
+            "numerical_columns": num_cols[:10],
+            "categorical_columns": cat_cols[:10],
+            "missing_pcts": {
+                col: round(float(df[col].isna().mean() * 100), 2)
+                for col in df.columns
+                if df[col].isna().mean() > 0
+            },
+            "rule_based_insights": rule_insights,
+        }
+
+        prompt_template = prompt_path.read_text(encoding="utf-8")
+        prompt = prompt_template.replace(
+            "{{EDA_SUMMARY}}", json.dumps(summary, indent=2)
+        ).replace("{{USER_QUESTION}}", "Generate insights from this dataset summary.")
+
+        client = google_genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+        )
+        raw = response.text.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw)
+            raw = re.sub(r"\n?```$", "", raw)
+
+        parsed = json.loads(raw)
+        insights = parsed.get("insights", [])
+        if isinstance(insights, list) and len(insights) >= 3:
+            return {"insights": insights, "source": "gemini"}
+
+    except Exception as e:
+        logger.warning(f"Gemini EDA insights failed: {e}")
+
+    return {"insights": rule_insights, "source": "rule_based"}
+
+
+# 10  Natural Language Question (Gemini)
+
+async def answer_question(df: pd.DataFrame, question: str) -> dict:
+    """
+    Answer a natural language question about the dataset.
+    Gemini understands the question, picks the right analysis,
+    and returns a plain English answer + supporting data.
+    Fallback: keyword-based routing.
+    """
+    question_lower = question.lower()
+
+    # Try Gemini first
+    try:
+        from google import genai as google_genai
+
+        api_key = settings.GEMINI_API_KEY
+        if api_key:
+            prompt_path = Path("prompts/eda_question.txt")
+            if prompt_path.exists():
+                num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+                cat_cols = df.select_dtypes(include=["object"]).columns.tolist()
+                dt_cols = df.select_dtypes(include=["datetime64"]).columns.tolist()
+
+                summary = {
+                    "shape": {"rows": len(df), "columns": len(df.columns)},
+                    "numerical_columns": num_cols[:15],
+                    "categorical_columns": cat_cols[:15],
+                    "datetime_columns": dt_cols,
+                    "sample_stats": {
+                        col: {
+                            "mean": round(float(df[col].dropna().mean()), 4),
+                            "std": round(float(df[col].dropna().std()), 4),
+                        }
+                        for col in num_cols[:5]
+                        if len(df[col].dropna()) > 0
+                    },
+                }
+
+                prompt_template = prompt_path.read_text(encoding="utf-8")
+                prompt = prompt_template.replace(
+                    "{{EDA_SUMMARY}}", json.dumps(summary, indent=2)
+                ).replace("{{USER_QUESTION}}", question)
+
+                client = google_genai.Client(api_key=api_key)
+                response = client.models.generate_content(
+                    model=settings.GEMINI_MODEL,
+                    contents=prompt,
+                )
+                raw = response.text.strip()
+                if raw.startswith("```"):
+                    raw = re.sub(r"^```[a-z]*\n?", "", raw)
+                    raw = re.sub(r"\n?```$", "", raw)
+
+                parsed = json.loads(raw)
+                if parsed.get("answer"):
+                    return {
+                        "question": question,
+                        "answer": parsed["answer"],
+                        "suggested_analysis": parsed.get("suggested_analysis"),
+                        "source": "gemini",
+                    }
+
+    except Exception as e:
+        logger.warning(f"Gemini question answering failed: {e}")
+
+    # Fallback — keyword routing
+    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    cat_cols = df.select_dtypes(include=["object"]).columns.tolist()
+
+    if any(kw in question_lower for kw in ["correlat", "related", "relationship"]):
+        result = multivariate_analysis(df)
+        answer = f"Found {len(result.get('strong_pairs', []))} strong correlations."
+        suggested = "multivariate"
+
+    elif any(kw in question_lower for kw in ["outlier", "unusual", "extreme"]):
+        col = num_cols[0] if num_cols else None
+        answer = f"Use the Outlier Investigation tab to explore unusual values in {col}." if col else "No numerical columns found."
+        suggested = "outlier"
+
+    elif any(kw in question_lower for kw in ["distribut", "spread", "range", "skew"]):
+        col = num_cols[0] if num_cols else None
+        answer = f"Use the Univariate Analysis tab to explore the distribution of {col}." if col else "No numerical columns found."
+        suggested = "univariate_numerical"
+
+    elif any(kw in question_lower for kw in ["categor", "frequenc", "common", "rare"]):
+        col = cat_cols[0] if cat_cols else None
+        answer = f"Use the Univariate Analysis tab to explore the categories of {col}." if col else "No categorical columns found."
+        suggested = "univariate_categorical"
+
+    elif any(kw in question_lower for kw in ["trend", "over time", "time series", "change"]):
+        answer = "Use the Time-Series tab to explore trends over time."
+        suggested = "time_series"
+
+    else:
+        answer = "Please use the analysis tabs to explore your data, or refine your question with specific column names."
+        suggested = "general"
+
+    return {
+        "question": question,
+        "answer": answer,
+        "suggested_analysis": suggested,
+        "source": "rule_based",
+    }
+
+# 11 Chart Recommendation
+
+def recommend_chart(
+    df: pd.DataFrame,
+    col_x: str,
+    col_y: str = None,
+) -> dict:
+    """
+    Recommend the best chart type based on column dtypes.
+    """
+    if col_x not in df.columns:
+        return {"error": f"Column '{col_x}' not found."}
+
+    x_is_num = pd.api.types.is_numeric_dtype(df[col_x])
+    x_is_dt = pd.api.types.is_datetime64_any_dtype(df[col_x])
+    x_is_cat = not x_is_num and not x_is_dt
+
+    if col_y is None:
+        if x_is_num:
+            chart = "histogram"
+            reason = f"'{col_x}' is numerical — histogram shows its distribution."
+        elif x_is_dt:
+            chart = "line_chart"
+            reason = f"'{col_x}' is a datetime — line chart shows trends over time."
+        else:
+            chart = "bar_chart"
+            reason = f"'{col_x}' is categorical — bar chart shows category frequencies."
+        return {"col_x": col_x, "col_y": None, "recommended_chart": chart, "reason": reason}
+
+    if col_y not in df.columns:
+        return {"error": f"Column '{col_y}' not found."}
+
+    y_is_num = pd.api.types.is_numeric_dtype(df[col_y])
+    y_is_dt = pd.api.types.is_datetime64_any_dtype(df[col_y])
+    y_is_cat = not y_is_num and not y_is_dt
+
+    if x_is_num and y_is_num:
+        chart = "scatter_plot"
+        reason = "Both columns are numerical — scatter plot shows their relationship."
+    elif x_is_dt and y_is_num:
+        chart = "line_chart"
+        reason = f"'{col_x}' is datetime and '{col_y}' is numerical — line chart shows the trend."
+    elif x_is_cat and y_is_num:
+        chart = "box_plot"
+        reason = f"'{col_x}' is categorical and '{col_y}' is numerical — box plot compares distributions across groups."
+    elif x_is_num and y_is_cat:
+        chart = "box_plot"
+        reason = f"'{col_y}' is categorical and '{col_x}' is numerical — box plot compares distributions across groups."
+    elif x_is_cat and y_is_cat:
+        chart = "grouped_bar_chart"
+        reason = "Both columns are categorical — grouped bar chart shows category combinations."
+    else:
+        chart = "bar_chart"
+        reason = "Default recommendation — adjust based on your analysis goal."
+
+    alternatives = {
+        "scatter_plot": ["line_chart", "hexbin"],
+        "box_plot": ["violin_plot", "bar_chart"],
+        "line_chart": ["area_chart", "scatter_plot"],
+        "bar_chart": ["pareto_chart", "pie_chart"],
+        "grouped_bar_chart": ["stacked_bar_chart", "heatmap"],
+        "histogram": ["density_plot", "box_plot"],
+    }
+
+    return {
+        "col_x": col_x,
+        "col_y": col_y,
+        "recommended_chart": chart,
+        "reason": reason,
+        "alternatives": alternatives.get(chart, []),
+    }
+
+
+# 14 EDA Summary
+
+def generate_eda_summary(df: pd.DataFrame, history: list[dict]) -> dict:
+    """
+    Generate an end-of-stage EDA summary.
+    Combines auto-insights with history of analyses run.
+    """
+    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    cat_cols = df.select_dtypes(include=["object"]).columns.tolist()
+    dt_cols = df.select_dtypes(include=["datetime64"]).columns.tolist()
+
+    # Correlation summary
+    strong_correlations = []
+    if len(num_cols) >= 2:
+        sub = df[num_cols[:10]].dropna()
+        if len(sub) > 3:
+            corr = sub.corr()
+            for i in range(len(num_cols[:10])):
+                for j in range(i + 1, len(num_cols[:10])):
+                    r = corr.iloc[i, j]
+                    if not np.isnan(r) and abs(r) > 0.7:
+                        strong_correlations.append({
+                            "col1": num_cols[i],
+                            "col2": num_cols[j],
+                            "r": round(float(r), 4),
+                        })
+
+    # Distribution summary
+    skewed_cols = []
+    for col in num_cols:
+        s = df[col].dropna()
+        if len(s) > 3 and abs(float(s.skew())) > 1:
+            skewed_cols.append(col)
+
+    # Missing value summary
+    missing = {
+        col: round(float(df[col].isna().mean() * 100), 2)
+        for col in df.columns
+        if df[col].isna().mean() > 0.05
+    }
+
+    # History summary
+    analyses_run = list({h.get("analysis_type") for h in history if h.get("analysis_type")})
+    questions_asked = [h.get("question") for h in history if h.get("question")]
+
+    return {
+        "shape": {"rows": len(df), "columns": len(df.columns)},
+        "column_types": {
+            "numerical": len(num_cols),
+            "categorical": len(cat_cols),
+            "datetime": len(dt_cols),
+        },
+        "strong_correlations": strong_correlations,
+        "skewed_columns": skewed_cols,
+        "high_missing_columns": missing,
+        "analyses_run": analyses_run,
+        "questions_asked": questions_asked,
+        "total_analyses": len(history),
+    }
+
 
 
