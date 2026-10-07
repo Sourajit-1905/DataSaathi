@@ -239,6 +239,8 @@ class CleanHistoryResponse(BaseModel):
     history: list[CleanHistoryEntry]
     total_operations: int
 
+
+
 # Transform / Stage 4 
 
 class ColumnStats(BaseModel):
@@ -314,3 +316,63 @@ class TransformHistoryResponse(BaseModel):
 
 
 
+#   EDA / Stage 5  
+
+class FilterCondition(BaseModel):
+    column: str
+    operator: str
+    value: Optional[Any] = None
+
+
+class EDAAnalyzeResponse(BaseModel):
+    session_id: str
+    analysis_type: str
+    filters_applied: int
+    rows_analysed: int
+    result: dict[str, Any]
+
+
+class EDAQuestionResponse(BaseModel):
+    session_id: str
+    question: str
+    answer: str
+    suggested_analysis: Optional[str] = None
+    source: str
+
+
+class EDAChartRecommendation(BaseModel):
+    col_x: str
+    col_y: Optional[str] = None
+    recommended_chart: str
+    reason: str
+    alternatives: Optional[list[str]] = None
+
+
+class EDAInsightsResponse(BaseModel):
+    session_id: str
+    insights: list[str]
+    source: str
+    count: int
+
+
+class EDAHistoryEntry(BaseModel):
+    analysis_type: str
+    column: Optional[str] = None
+    col_x: Optional[str] = None
+    col_y: Optional[str] = None
+    filters: Optional[list[dict[str, Any]]] = None
+    filter_count: Optional[int] = None
+    rows_analysed: Optional[int] = None
+    question: Optional[str] = None
+    source: Optional[str] = None
+
+
+class EDAHistoryResponse(BaseModel):
+    session_id: str
+    history: list[EDAHistoryEntry]
+    total_analyses: int
+
+
+class EDASummaryResponse(BaseModel):
+    session_id: str
+    summary: dict[str, Any]
