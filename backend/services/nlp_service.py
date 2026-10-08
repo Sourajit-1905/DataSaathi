@@ -352,3 +352,358 @@ def sentiment_distribution(df: DataFrame, column: str)->dict:
 
 
 # 7. TF-IDF Keyword Extraction
+
+def tfidf_keywords(df: DataFrame, column: str, top_n: int = 20) -> list[dict]:
+    """
+    Extract top N keywords using TF-IDF.
+    """
+    if column not in df.columns: return [{"error": f"Column '{column}' not found."}]
+
+    try:
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        corpus = df[column].fillna("").astype(str).tolist()
+        vectorizer = TfidfVectorizer(
+            max_features=500,
+            stop_words="english",
+            min_df=2,
+            ngram_range=(1, 1),
+        )
+        tfidf_matrix = vectorizer.fit_transform(corpus)
+        feature_names = vectorizer.get_feature_names_out()
+        mean_scores = np.asarray(tfidf_matrix.mean(axis=0)).flatten()
+
+        top_indices = mean_scores.argsort()[::-1][:top_n]
+        return [
+            {
+                "keyword": feature_names[i],
+                "score": round(float(mean_scores[i]), 6),
+                "rank": rank + 1,
+            }
+            for rank, i in enumerate(top_indices)
+        ]
+
+    except Exception as e:
+        logger.warning(f"TF-IDF failed: {e}")
+        return [{"error": str(e)}]
+
+
+    
+# 8. Word Frequency Count
+
+def word_frequency(df: DataFrame, column:str, top_n: int = 30) -> list[dict]:
+
+
+    if column not in df.columns: return [{"error": f"Column '{column}' not found."}]
+
+    stopwords = _get_stopwords()
+    all_tokens = []
+    for text in df[column].fillna("").astype(str):
+        all_tokens.extend(_clean_text(text, stopwords))
+
+    counter = Counter(all_tokens)
+    return [
+        {"word": word, "count": count, "rank": rank + 1}
+        for rank, (word, count) in enumerate(counter.most_common(top_n))
+    ]
+
+# 9. Word Cloud Data
+
+def word_cloud_data(df: DataFrame, column: str, top_n:int = 50) -> list[dict]:
+
+    freq = word_frequency(df, column, top_n=top_n)
+
+    if freq and "error" in freq[0]: return freq
+
+    max_count = max(item["count"] for item in freq) if freq else 1
+
+    return [
+        {
+            "word": item["word"],
+            "count": item["count"],
+            "weight": round(item["count"] / max_count, 4),
+        }
+        for item in freq
+    ]
+
+# 10  N-Gram Extraction
+
+def extract_ngrams(
+    df: pd.DataFrame, column: str, n: int = 2, top_n: int = 20
+) -> list[dict]:
+    """Extract top bigrams (n=2) or trigrams (n=3)."""
+    if column not in df.columns:
+        return [{"error": f"Column '{column}' not found."}]
+
+    stopwords = _get_stopwords()
+    all_ngrams = []
+
+    for text in df[column].fillna("").astype(str):
+        tokens = _clean_text(text, stopwords)
+        ngrams = [" ".join(tokens[i:i+n]) for i in range(len(tokens) - n + 1)]
+        all_ngrams.extend(ngrams)
+
+    counter = Counter(all_ngrams)
+    return [
+        {"ngram": ng, "count": count, "rank": rank + 1}
+        for rank, (ng, count) in enumerate(counter.most_common(top_n))
+    ]
+
+
+# 11  LDA Topic Modelling
+
+def lda_topics(
+    df: pd.DataFrame, column: str, n_topics: int = 5, top_words: int = 8
+) -> list[dict]:
+    """Run LDA topic modelling and return top words per topic."""
+    if column not in df.columns:
+        return [{"error": f"Column '{column}' not found."}]
+
+    try:
+        from sklearn.feature_extraction.text import CountVectorizer
+        from sklearn.decomposition import LatentDirichletAllocation
+
+        corpus = df[column].fillna("").astype(str).tolist()
+        vectorizer = CountVectorizer(
+            max_features=300,
+            stop_words="english",
+            min_df=2,
+        )
+        dtm = vectorizer.fit_transform(corpus)
+        feature_names = vectorizer.get_feature_names_out()
+
+        lda = LatentDirichletAllocation(
+            n_components=n_topics,
+            random_state=42,
+            max_iter=10,
+        )
+        lda.fit(dtm)
+
+        topics = []
+        doc_topic = lda.transform(dtm)
+        total_docs = len(corpus)
+
+        for topic_idx, topic in enumerate(lda.components_):
+            top_indices = topic.argsort()[::-1][:top_words]
+            keywords = [feature_names[i] for i in top_indices]
+            weights = [round(float(topic[i]), 4) for i in top_indices]
+
+            # Proportion of documents where this topic dominates
+            dominant_count = int((doc_topic.argmax(axis=1) == topic_idx).sum())
+
+            topics.append({
+                "topic_id": topic_idx,
+                "keywords": keywords,
+                "weights": weights,
+                "proportion": round(dominant_count / total_docs * 100, 2),
+            })
+
+        return topics
+
+    except Exception as e:
+        logger.warning(f"LDA failed: {e}")
+        return [{"error": str(e)}]
+
+
+# 12  Topic-Keyword Mapping
+
+def topic_keyword_map(
+    df: pd.DataFrame, column: str, n_topics: int = 5
+) -> dict:
+    """Return a mapping of topic_id → keyword list for quick lookup."""
+    topics = lda_topics(df, column, n_topics=n_topics)
+    if topics and "error" in topics[0]:
+        return topics[0]
+
+    return {
+        str(t["topic_id"]): t["keywords"]
+        for t in topics
+    }
+
+
+# N3  Document-Topic Assignment
+
+def document_topic_assignment(
+    df: pd.DataFrame, column: str, n_topics: int = 5
+) -> list[dict]:
+    """Assign each document to its dominant topic."""
+    if column not in df.columns:
+        return [{"error": f"Column '{column}' not found."}]
+
+    try:
+        from sklearn.feature_extraction.text import CountVectorizer
+        from sklearn.decomposition import LatentDirichletAllocation
+
+        corpus = df[column].fillna("").astype(str).tolist()
+        vectorizer = CountVectorizer(
+            max_features=300, stop_words="english", min_df=2
+        )
+        dtm = vectorizer.fit_transform(corpus)
+        lda = LatentDirichletAllocation(
+            n_components=n_topics, random_state=42, max_iter=10
+        )
+        doc_topic = lda.fit_transform(dtm)
+
+        return [
+            {
+                "index": int(i),
+                "dominant_topic": int(doc_topic[i].argmax()),
+                "topic_score": round(float(doc_topic[i].max()), 4),
+                "text_preview": corpus[i][:80],
+            }
+            for i in range(len(corpus))
+        ]
+
+    except Exception as e:
+        return [{"error": str(e)}]
+
+
+#   14  Sentence Embeddings (sampled)
+
+def get_embeddings(
+    df: pd.DataFrame, column: str
+) -> dict:
+    """
+    Compute sentence embeddings using all-MiniLM-L6-v2.
+    Sampled to EMBEDDING_SAMPLE_CAP rows for performance.
+    """
+    if column not in df.columns:
+        return {"error": f"Column '{column}' not found."}
+
+    s = df[column].fillna("").astype(str)
+    sampled = s.sample(
+        min(EMBEDDING_SAMPLE_CAP, len(s)), random_state=42
+    )
+
+    try:
+        embedder = _get_embedder()
+        embeddings = embedder.encode(sampled.tolist(), show_progress_bar=False)
+        return {
+            "indices": sampled.index.tolist(),
+            "embeddings": embeddings.tolist(),
+            "n_sampled": len(sampled),
+            "embedding_dim": embeddings.shape[1],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# 15  Semantic Similarity Search
+
+def semantic_similarity_search(
+    df: pd.DataFrame, column: str, query: str, top_n: int = 5
+) -> list[dict]:
+    """Find the top N most semantically similar records to a query."""
+    if column not in df.columns:
+        return [{"error": f"Column '{column}' not found."}]
+
+    try:
+        from sklearn.metrics.pairwise import cosine_similarity
+
+        s = df[column].fillna("").astype(str)
+        sampled = s.sample(
+            min(EMBEDDING_SAMPLE_CAP, len(s)), random_state=42
+        )
+
+        embedder = _get_embedder()
+        doc_embeddings = embedder.encode(sampled.tolist(), show_progress_bar=False)
+        query_embedding = embedder.encode([query], show_progress_bar=False)
+
+        sims = cosine_similarity(query_embedding, doc_embeddings)[0]
+        top_indices = sims.argsort()[::-1][:top_n]
+
+        return [
+            {
+                "rank": rank + 1,
+                "index": int(sampled.index[i]),
+                "text": sampled.iloc[i][:200],
+                "similarity": round(float(sims[i]), 4),
+            }
+            for rank, i in enumerate(top_indices)
+        ]
+
+    except Exception as e:
+        return [{"error": str(e)}]
+
+
+# 16  Most Similar Pairs
+
+def most_similar_pairs(
+    df: pd.DataFrame, column: str, top_n: int = 5
+) -> list[dict]:
+    """Find the top N most similar text pairs in the column."""
+    if column not in df.columns:
+        return [{"error": f"Column '{column}' not found."}]
+
+    try:
+        from sklearn.metrics.pairwise import cosine_similarity
+
+        s = df[column].fillna("").astype(str)
+        sampled = s.sample(min(200, len(s)), random_state=42)
+
+        embedder = _get_embedder()
+        embeddings = embedder.encode(sampled.tolist(), show_progress_bar=False)
+        sim_matrix = cosine_similarity(embeddings)
+
+        pairs = []
+        n = len(sampled)
+        for i in range(n):
+            for j in range(i + 1, n):
+                pairs.append((i, j, sim_matrix[i, j]))
+
+        pairs.sort(key=lambda x: x[2], reverse=True)
+        top_pairs = pairs[:top_n]
+
+        return [
+            {
+                "rank": rank + 1,
+                "text_a": sampled.iloc[i][:150],
+                "text_b": sampled.iloc[j][:150],
+                "similarity": round(float(sim), 4),
+            }
+            for rank, (i, j, sim) in enumerate(top_pairs)
+        ]
+
+    except Exception as e:
+        return [{"error": str(e)}]
+
+
+#  17   K-Means Text Clustering
+
+def cluster_texts(
+    df: pd.DataFrame, column: str, n_clusters: int = 5
+) -> list[dict]:
+    """Cluster texts using K-Means on sentence embeddings."""
+    if column not in df.columns:
+        return [{"error": f"Column '{column}' not found."}]
+
+    try:
+        from sklearn.cluster import KMeans
+
+        s = df[column].fillna("").astype(str)
+        sampled = s.sample(
+            min(EMBEDDING_SAMPLE_CAP, len(s)), random_state=42
+        )
+
+        embedder = _get_embedder()
+        embeddings = embedder.encode(sampled.tolist(), show_progress_bar=False)
+
+        n_clusters = min(n_clusters, len(sampled))
+        km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        labels = km.fit_predict(embeddings)
+
+        clusters = []
+        for cluster_id in range(n_clusters):
+            mask = labels == cluster_id
+            cluster_texts = [
+                sampled.iloc[i] for i in range(len(sampled)) if mask[i]
+            ]
+            clusters.append({
+                "cluster_id": cluster_id,
+                "size": int(mask.sum()),
+                "sample_texts": [t[:100] for t in cluster_texts[:3]],
+            })
+
+        return clusters
+
+    except Exception as e:
+        return [{"error": str(e)}]
