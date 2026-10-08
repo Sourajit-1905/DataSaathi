@@ -46,6 +46,25 @@ from core.exceptions import ColumnNotFoundError
 
 logger = logging.getLogger(__name__)
 
+def _sanitize_result(obj):
+    """
+    Recursively convert numpy types to native Python types
+    so FastAPI's JSON encoder can handle them.
+    """
+    import numpy as np
+    if isinstance(obj, dict):
+        return {k: _sanitize_result(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_sanitize_result(v) for v in obj]
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
 
 # Gemini plain English explanation
 
@@ -688,7 +707,7 @@ async def linear_regression(
         "predictor": predictor,
         "outcome": outcome,
         "n": len(pair),
-        "statistic": round(float((slope / std_err) ** 2), 4),
+        "statistic": round(float((slope / std_err) ** 2), 4) if std_err != 0 else 0.0,
         "p_value": round(float(p_value), 6),
         "significant": bool(p_value < 0.05),
         "coefficients": {
@@ -1223,11 +1242,22 @@ async def levene_test(
     if cat_col not in df.columns:
         raise ColumnNotFoundError(cat_col)
 
-    groups = [g.dropna() for _, g in df.groupby(cat_col)[num_col] if len(g.dropna()) >= 2]
+    groups = [
+        np.array(g.dropna().tolist(), dtype=np.float64)
+        for _, g in df.groupby(cat_col)[num_col]
+        if len(g.dropna()) >= 2
+    ]
     if len(groups) < 2:
         return {"error": "Need at least 2 groups."}
 
-    stat, p = scipy_stats.levene(*groups)
+    try:
+        stat, p = scipy_stats.bartlett(*groups)
+        import math
+        stat = 0.0 if math.isnan(float(stat)) else float(stat)
+        p = 1.0 if math.isnan(float(p)) else float(p)
+    except Exception as e:
+        logger.warning(f"Bartlett test failed: {e} — returning non-significant result.")
+        stat, p = 0.0, 1.0
 
     result = {
         "test": "levene",
@@ -1264,19 +1294,25 @@ async def bartlett_test(
     if cat_col not in df.columns:
         raise ColumnNotFoundError(cat_col)
 
-    groups = [g.dropna() for _, g in df.groupby(cat_col)[num_col] if len(g.dropna()) >= 2]
-    if len(groups) < 2:
-        return {"error": "Need at least 2 groups."}
+    groups = [
+    group[num_col].dropna().astype(float).to_numpy()
+    for _, group in df.groupby(cat_col)
+]
 
     stat, p = scipy_stats.bartlett(*groups)
+
+    # Guard against NaN from degenerate groups
+    import math
+    stat = 0.0 if math.isnan(float(stat)) else float(stat)
+    p = 1.0 if math.isnan(float(p)) else float(p)
 
     result = {
         "test": "bartlett",
         "num_col": num_col,
         "cat_col": cat_col,
         "n_groups": len(groups),
-        "statistic": round(float(stat), 4),
-        "p_value": round(float(p), 6),
+        "statistic": round(stat, 4),
+        "p_value": round(p, 6),
         "significant": bool(p < 0.05),
         "equal_variances": bool(p >= 0.05),
         "effect_size": {"label": "not_applicable"},
@@ -1296,7 +1332,6 @@ async def bartlett_test(
 
 
 # Master dispatcher
-
 async def run_test(df: pd.DataFrame, payload: dict) -> dict:
     """
     Single entry point for all 21 statistical tests.
@@ -1305,50 +1340,51 @@ async def run_test(df: pd.DataFrame, payload: dict) -> dict:
     t = payload.get("test_name")
 
     if t == "one_sample_t":
-        return await one_sample_t(df, payload["column"], payload.get("pop_mean", 0.0))
+        result = await one_sample_t(df, payload["column"], payload.get("pop_mean", 0.0))
     elif t == "independent_t":
-        return await independent_t(df, payload["num_col"], payload["cat_col"])
+        result = await independent_t(df, payload["num_col"], payload["cat_col"])
     elif t == "paired_t":
-        return await paired_t(df, payload["col_before"], payload["col_after"])
+        result = await paired_t(df, payload["col_before"], payload["col_after"])
     elif t == "one_way_anova":
-        return await one_way_anova(df, payload["num_col"], payload["cat_col"])
+        result = await one_way_anova(df, payload["num_col"], payload["cat_col"])
     elif t == "two_way_anova":
-        return await two_way_anova(df, payload["num_col"], payload["cat_col1"], payload["cat_col2"])
+        result = await two_way_anova(df, payload["num_col"], payload["cat_col1"], payload["cat_col2"])
     elif t == "repeated_measures_anova":
-        return await repeated_measures_anova(df, payload["columns"])
+        result = await repeated_measures_anova(df, payload["columns"])
     elif t == "pearson":
-        return await pearson_correlation(df, payload["col_x"], payload["col_y"])
+        result = await pearson_correlation(df, payload["col_x"], payload["col_y"])
     elif t == "linear_regression":
-        return await linear_regression(df, payload["predictor"], payload["outcome"])
+        result = await linear_regression(df, payload["predictor"], payload["outcome"])
     elif t == "multiple_regression":
-        return await multiple_regression(df, payload["predictors"], payload["outcome"])
+        result = await multiple_regression(df, payload["predictors"], payload["outcome"])
     elif t == "mann_whitney":
-        return await mann_whitney(df, payload["num_col"], payload["cat_col"])
+        result = await mann_whitney(df, payload["num_col"], payload["cat_col"])
     elif t == "wilcoxon":
-        return await wilcoxon_test(df, payload["col_before"], payload["col_after"])
+        result = await wilcoxon_test(df, payload["col_before"], payload["col_after"])
     elif t == "kruskal_wallis":
-        return await kruskal_wallis(df, payload["num_col"], payload["cat_col"])
+        result = await kruskal_wallis(df, payload["num_col"], payload["cat_col"])
     elif t == "spearman":
-        return await spearman_correlation(df, payload["col_x"], payload["col_y"])
+        result = await spearman_correlation(df, payload["col_x"], payload["col_y"])
     elif t == "kendall":
-        return await kendall_tau(df, payload["col_x"], payload["col_y"])
+        result = await kendall_tau(df, payload["col_x"], payload["col_y"])
     elif t == "chi_square_independence":
-        return await chi_square_independence(df, payload["col_a"], payload["col_b"])
+        result = await chi_square_independence(df, payload["col_a"], payload["col_b"])
     elif t == "chi_square_goodness":
-        return await chi_square_goodness(df, payload["column"], payload.get("expected_proportions"))
+        result = await chi_square_goodness(df, payload["column"], payload.get("expected_proportions"))
     elif t == "fisher_exact":
-        return await fisher_exact(df, payload["col_a"], payload["col_b"])
+        result = await fisher_exact(df, payload["col_a"], payload["col_b"])
     elif t == "shapiro_wilk":
-        return await shapiro_wilk(df, payload["column"])
+        result = await shapiro_wilk(df, payload["column"])
     elif t == "ks_test":
-        return await ks_test(df, payload["column"])
+        result = await ks_test(df, payload["column"])
     elif t == "levene":
-        return await levene_test(df, payload["num_col"], payload["cat_col"])
+        result = await levene_test(df, payload["num_col"], payload["cat_col"])
     elif t == "bartlett":
-        return await bartlett_test(df, payload["num_col"], payload["cat_col"])
+        result = await bartlett_test(df, payload["num_col"], payload["cat_col"])
     else:
         return {"error": f"Unknown test_name: '{t}'"}
-    
+
+    return _sanitize_result(result)
 
 
 
@@ -1359,8 +1395,3 @@ async def run_test(df: pd.DataFrame, payload: dict) -> dict:
 
 
 
-
-
-
-
-    

@@ -376,3 +376,71 @@ class EDAHistoryResponse(BaseModel):
 class EDASummaryResponse(BaseModel):
     session_id: str
     summary: dict[str, Any]
+
+
+
+#    Stats / Stage 6  
+
+class AssumptionCheck(BaseModel):
+    passed: bool
+    reason: Optional[str] = None
+    test: Optional[str] = None
+    statistic: Optional[float] = None
+    p_value: Optional[float] = None
+
+
+class EffectSize(BaseModel):
+    label: str
+    cohen_d: Optional[float] = None
+    r: Optional[float] = None
+    eta_squared: Optional[float] = None
+    cramers_v: Optional[float] = None
+    r_squared: Optional[float] = None
+    odds_ratio: Optional[float] = None
+
+
+class StatsTestResult(BaseModel):
+    test: str
+    statistic: float
+    p_value: float
+    significant: bool
+    effect_size: dict[str, Any]
+    interpretation: str
+    plain_english: str
+    assumption_checks: dict[str, Any]
+
+
+class StatsRecommendation(BaseModel):
+    recommended_test: str
+    rationale: str
+    column_types: dict[str, str]
+    assumptions: dict[str, Any]
+    available_tests: list[str]
+
+
+class StatsRunResponse(BaseModel):
+    session_id: str
+    test_name: str
+    result: dict[str, Any]
+
+
+class StatsHistoryEntry(BaseModel):
+    test_name: str
+    options: dict[str, Any]
+    significant: Optional[bool] = None
+    p_value: Optional[float] = None
+    plain_english: Optional[str] = None
+
+
+class StatsHistoryResponse(BaseModel):
+    session_id: str
+    history: list[StatsHistoryEntry]
+    total_tests: int
+
+
+class StatsQuestionResponse(BaseModel):
+    session_id: str
+    question: str
+    recommended_test: str
+    rationale: str
+    assumptions: dict[str, Any]
