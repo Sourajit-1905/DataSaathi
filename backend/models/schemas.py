@@ -444,3 +444,129 @@ class StatsQuestionResponse(BaseModel):
     recommended_test: str
     rationale: str
     assumptions: dict[str, Any]
+
+
+#   NLP / Stage 7  
+
+class TextColumnInfo(BaseModel):
+    column: str
+    is_text_column: bool
+    avg_word_count: float
+    avg_length: float
+    unique_ratio: float
+    sample: list[str]
+
+
+class NLPDetectColumnsResponse(BaseModel):
+    session_id: str
+    columns: list[TextColumnInfo]
+    text_columns: list[str]
+
+
+class TextQualityResult(BaseModel):
+    column: str
+    total: int
+    empty_count: int
+    empty_pct: float
+    duplicate_count: int
+    duplicate_pct: float
+    very_short_count: int
+    noise_count: int
+    quality_score: int
+    quality_label: str
+
+
+class SentimentAggregate(BaseModel):
+    column: str
+    total: int
+    positive_count: int
+    negative_count: int
+    neutral_count: int
+    positive_pct: float
+    negative_pct: float
+    neutral_pct: float
+    avg_compound: float
+    overall_sentiment: str
+
+
+class KeywordEntry(BaseModel):
+    keyword: str
+    score: float
+    rank: int
+
+
+class WordCloudEntry(BaseModel):
+    word: str
+    count: int
+    weight: float
+
+
+class TopicEntry(BaseModel):
+    topic_id: int
+    keywords: list[str]
+    weights: list[float]
+    proportion: float
+
+
+class SimilarityMatch(BaseModel):
+    rank: int
+    index: int
+    text: str
+    similarity: float
+
+
+class ClusterEntry(BaseModel):
+    cluster_id: int
+    size: int
+    sample_texts: Optional[list[str]] = None
+    keywords: Optional[list[str]] = None
+    representative_text: Optional[str] = None
+
+
+class NLPRunRequest(BaseModel):
+    analysis_type: str
+    column: str
+    options: Optional[dict[str, Any]] = {}
+
+
+class NLPRunResponse(BaseModel):
+    session_id: str
+    analysis_type: str
+    column: str
+    result: Any
+
+
+class NLPQuestionRequest(BaseModel):
+    column: str
+    query: str
+    top_n: Optional[int] = 5
+
+
+class NLPQuestionResponse(BaseModel):
+    session_id: str
+    query: str
+    column: str
+    results: list[SimilarityMatch]
+
+
+class NLPInsightsResponse(BaseModel):
+    session_id: str
+    column: str
+    insights: list[str]
+    source: str
+    count: int
+
+
+class NLPHistoryEntry(BaseModel):
+    analysis_type: str
+    column: str
+    options: Optional[dict[str, Any]] = None
+    query: Optional[str] = None
+
+
+class NLPHistoryResponse(BaseModel):
+    session_id: str
+    history: list[NLPHistoryEntry]
+    total_analyses: int
+
+
