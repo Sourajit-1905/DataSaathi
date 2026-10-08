@@ -337,3 +337,53 @@ The formal hypothesis testing stage. While EDA explores patterns informally, Sta
 5. `tests/test_stats.py` — verification tests
 
 
+## Stage 6 Summary — What Was Built and Verified
+
+- **21 statistical test functions** — Parametric (t-tests, ANOVA, regression), non-parametric (Mann-Whitney, Wilcoxon, Kruskal-Wallis), correlation (Pearson, Spearman, Kendall), categorical (Chi-square, Fisher's Exact), and distribution tests (Shapiro-Wilk, KS, Levene, Bartlett)
+- **Test recommender** — Routes to the appropriate test based on column types, normality, group counts, and question keywords
+- **Assumption checker** — Checks normality, equal variance, and sample size before running tests
+- **Effect sizes** — Computes Cohen's d, eta-squared, Cramér's V, r, and R² alongside test results
+- **Gemini plain English** — Generates a 2–3 sentence explanation for every result, with a rule-based fallback if Gemini is unavailable
+- **Post-hoc Tukey HSD** — Automatically appended to ANOVA results when statistically significant
+- **`_sanitize_result`** — Dispatcher-level NumPy type sanitizer that fixes `numpy.bool_` serialization across all 21 tests
+- **Stats history** — Logs every test with its p-value and plain English explanation in the in-memory cache
+
+
+
+# BACKEND STAGE 7 — NLP Service
+
+## What this stage is
+
+The text analysis stage. It processes free-form text columns using NLP techniques — from basic quality checks to sentiment analysis, keyword extraction, topic modelling, semantic similarity, and text clustering.
+
+## What it does
+
+- Detects text columns and assesses their quality
+- Runs sentiment analysis using VADER
+- Extracts keywords using TF-IDF
+- Generates word clouds from term frequencies
+- Detects language per column
+- Runs topic modelling using LDA
+- Finds similar records using sentence embeddings
+- Clusters text records using K-Means on embeddings
+- Generates NLP insights via Gemini with rule-based fallback
+- Samples large datasets (>2000 rows) for embedding operations
+
+## Where it's used
+
+- **Frontend NLP page** — sentiment cards, keyword bar chart, word cloud, topic cards, similarity results, and cluster cards
+- **Stage 9 (Report)** — NLP results become Section 7 of the report
+- **Gemini** — generates the insights narrative from NLP results
+
+## Files in this stage
+
+1. `services/nlp_service.py` — 27 NLP functions
+2. `prompts/nlp_insights.txt` — Gemini prompt template
+3. `routers/nlp.py` — 5 endpoints
+4. `models/schemas.py` — updated with NLP schemas
+5. `tests/test_nlp.py` — verification tests
+
+
+
+
+
