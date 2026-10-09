@@ -570,3 +570,190 @@ class NLPHistoryResponse(BaseModel):
     total_analyses: int
 
 
+# ML Strategy / Stage 8  
+
+class MLRecommendRequest(BaseModel):
+    target: Optional[str] = None
+    objective: Optional[str] = ""
+    problem_type: Optional[str] = None
+
+
+class MLProblemInfo(BaseModel):
+    problem_type: str
+    target: Optional[str] = None
+    n_classes: Optional[int] = None
+    confidence: str
+    source: str
+    reasoning: str
+
+
+class MLReadiness(BaseModel):
+    score: int
+    label: str
+    n_rows: int
+    n_features: int
+    rows_per_feature: Optional[float] = None
+    feature_missing_pct: float
+    warnings: list[str]
+
+
+class MLLeakageFlag(BaseModel):
+    column: str
+    reason: str
+    correlation: Optional[float] = None
+
+
+class MLLeakage(BaseModel):
+    flagged_features: list[MLLeakageFlag]
+    identifier_columns: list[str]
+    risk: str
+
+
+class MLCollinearPair(BaseModel):
+    col1: str
+    col2: str
+    correlation: float
+
+
+class MLMulticollinearity(BaseModel):
+    has_multicollinearity: bool
+    pairs: list[MLCollinearPair]
+
+
+class MLImbalance(BaseModel):
+    applicable: bool
+    is_imbalanced: bool
+    severity: Optional[str] = None
+    imbalance_ratio: Optional[float] = None
+    majority_class: Optional[str] = None
+    majority_pct: Optional[float] = None
+    minority_class: Optional[str] = None
+    minority_pct: Optional[float] = None
+    minority_count: Optional[int] = None
+
+
+class MLModelCard(BaseModel):
+    rank: int
+    name: str
+    score: int
+    suitability: str
+    dots: int
+    recommended: bool
+    complexity: str
+    training_speed: str
+    interpretability: str
+    strengths: list[str]
+    weaknesses: list[str]
+    needs_scaling: bool
+    handles_missing: bool
+    handles_categorical: bool
+    reasons: list[str]
+    reasoning: Optional[str] = None
+
+
+class MLModelComparisonRow(BaseModel):
+    rank: int
+    model: str
+    score: int
+    suitability: str
+    complexity: str
+    training_speed: str
+    interpretability: str
+    needs_scaling: str
+    handles_missing: str
+    handles_categorical: str
+
+
+class MLPreprocessingStep(BaseModel):
+    technique: str
+    priority: str
+    applies_to: list[str]
+    trigger: str
+    reason: str
+
+
+class MLFeatureEngineeringStep(BaseModel):
+    technique: str
+    applies_to: list[str]
+    trigger: str
+    reason: str
+
+
+class MLImbalanceTechnique(BaseModel):
+    technique: str
+    priority: str
+    trigger: str
+    reason: str
+
+
+class MLMetrics(BaseModel):
+    primary: str
+    secondary: list[str]
+    avoid: list[str]
+    reason: str
+
+
+class MLArchitectureStep(BaseModel):
+    step: int
+    name: str
+    description: str
+
+
+class MLRoadmapStep(BaseModel):
+    step_number: int
+    title: str
+    description: str
+
+
+class MLStrategy(BaseModel):
+    valid: bool
+    objective: str
+    problem: MLProblemInfo
+    target_analysis: dict[str, Any]
+    feature_columns: list[str]
+    excluded_columns: dict[str, list[str]]
+    column_roles: dict[str, list[str]]
+    readiness: MLReadiness
+    leakage: MLLeakage
+    multicollinearity: MLMulticollinearity
+    imbalance: MLImbalance
+    models: list[MLModelCard]
+    model_comparison: list[MLModelComparisonRow]
+    preprocessing: list[MLPreprocessingStep]
+    feature_engineering: list[MLFeatureEngineeringStep]
+    imbalance_handling: list[MLImbalanceTechnique]
+    split_strategy: dict[str, Any]
+    cross_validation: dict[str, Any]
+    metrics: MLMetrics
+    architecture: list[MLArchitectureStep]
+    roadmap: list[MLRoadmapStep]
+    summary: str
+    reasoning_source: str
+
+
+class MLRecommendResponse(BaseModel):
+    session_id: str
+    strategy: MLStrategy
+
+
+class MLSummaryResponse(BaseModel):
+    session_id: str
+    summary: dict[str, Any]
+
+
+class MLModelsResponse(BaseModel):
+    session_id: str
+    problem_type: str
+    models: list[MLModelCard]
+    model_comparison: list[MLModelComparisonRow]
+
+
+class MLRoadmapResponse(BaseModel):
+    session_id: str
+    roadmap: list[MLRoadmapStep]
+    architecture: list[MLArchitectureStep]
+
+
+
+
+
