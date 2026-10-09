@@ -384,6 +384,65 @@ The text analysis stage. It processes free-form text columns using NLP technique
 5. `tests/test_nlp.py` — verification tests
 
 
+# BACKEND STAGE 8 — ML Strategy Service
+
+## What this stage is
+
+The advisory stage. It does not train models; it analyzes the cleaned and transformed dataset to recommend a suitable machine learning approach.
+
+## What it does
+
+- Detects the problem type from the target column and user's objective
+- Recommends and ranks suitable models with suitability scores, strengths, and weaknesses
+- Detects class imbalance and suggests handling techniques
+- Recommends preprocessing and feature engineering
+- Suggests evaluation metrics, data splits, and cross-validation
+- Generates a modelling roadmap and pipeline architecture
+- Uses Gemini for goal-specific reasoning, with rule-based fallback
+
+## Where it's used
+
+- **Frontend ML Strategy page** — problem banner, model cards, comparison table, technique checklist, imbalance warning, architecture diagram, and roadmap
+- **Stage 9 (Report)** — ML strategy becomes Section 8 of the report
+- **Gemini** — generates reasoning tailored to the user's objective
+
+## Files in this stage
+
+1. `services/ml_service.py` — 19 ML strategy functions
+2. `prompts/ml_strategy.txt` — Gemini prompt template
+3. `routers/ml.py` — 4 endpoints (recommend, summary, models, roadmap)
+4. `models/schemas.py` — updated with ML schemas
+5. `tests/test_ml.py` — verification tests
+
+## Full ML Strategy Function Map
+
+| Category | ID | Function | Brief Description |
+|---|---|---|---|
+| **Analysis** | **M1** | `detect_problem_type()` | Identifies classification, regression, or clustering. |
+| **Analysis** | **M2** | `analyze_target()` | Analyzes target characteristics and distribution. |
+| **Analysis** | **M3** | `detect_class_imbalance()` | Detects class imbalance. |
+| **Analysis** | **M4** | `assess_dataset_readiness()` | Evaluates dataset readiness for ML. |
+| **Analysis** | **M5** | `detect_leakage_risk()` | Flags potential data leakage. |
+| **Analysis** | **M6** | `detect_multicollinearity()` | Detects highly correlated predictors. |
+| **Models** | **M7** | `recommend_models()` | Scores and ranks suitable models. |
+| **Models** | **M8** | `build_model_comparison()` | Compares recommended models. |
+| **Techniques** | **M9** | `recommend_preprocessing()` | Suggests preprocessing techniques. |
+| **Techniques** | **M10** | `recommend_feature_engineering()` | Recommends feature engineering. |
+| **Techniques** | **M11** | `recommend_imbalance_handling()` | Suggests imbalance-handling methods. |
+| **Evaluation** | **M12** | `recommend_split_strategy()` | Recommends train/test splitting. |
+| **Evaluation** | **M13** | `recommend_cross_validation()` | Suggests cross-validation strategies. |
+| **Evaluation** | **M14** | `recommend_metrics()` | Selects suitable evaluation metrics. |
+| **Plan** | **M15** | `build_architecture()` | Defines the ML pipeline architecture. |
+| **Plan** | **M16** | `build_roadmap()` | Generates a step-by-step modelling plan. |
+| **Narrative** | **M17** | `generate_reasoning()` | Generates explanations using Gemini or rule-based fallback. |
+| **Master** | **M18** | `build_ml_strategy()` | Combines recommendations into a complete strategy. |
+| **Master** | **M19** | `ml_summary()` | Produces a compact summary for the report. |
+
+## Important Note
+
+This service is **advisory only** — it recommends ML approaches and does not train or evaluate models.
+
+
 
 
 
