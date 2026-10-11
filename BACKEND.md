@@ -490,3 +490,59 @@ The packaging stage. It collects results from Stages 2–8, assembles them into 
 | **10** | Appendix | Provides supporting information and additional details. |
 
 
+
+
+# BACKEND STAGE 10 — Hardening and Cross-Cutting Concerns
+
+## What this stage is
+
+The final backend-wide pass. It adds no features; it makes existing functionality safer to deploy through consistent errors, input validation, resource limits, and logging.
+
+## What it does
+
+- Standardizes errors as `{error, detail, code}` with request IDs and no leaked paths or tracebacks
+- Validates upload content, file types, sizes, and spreadsheet safety
+- Secures formula validation against invalid tokens and expensive expressions
+- Adds resource caps and user-visible warnings for heavy operations
+- Fixes snapshot, undo, reset, and session-cleanup integrity
+- Creates a shared Gemini client with timeouts, retries, thread offloading, and API-key redaction
+- Adds request-level logging, security headers, and secret redaction
+- Adds security and hardening regression tests
+
+## Where it's used
+
+- **Every endpoint** — consistent errors, validation, and logging
+- **Frontend** — uses uniform errors and resource-limit warnings
+- **Deployment** — improves security and predictable resource usage for Docker and Nginx
+
+## Audit Findings and Fixes
+
+| Area | Existing Issue | Required Fix |
+|---|---|---|
+| **Error Handling** | Inconsistent error responses; validation errors may expose input. | Standardize error shape and add request IDs. |
+| **Path Security** | Exceptions may expose filesystem paths. | Scrub paths and sensitive details. |
+| **Upload Validation** | Relies on file extension; size check happens after reading. | Validate content and MIME type, check ZIP safety, read in chunks, and sanitize filenames. |
+| **Formula Security** | Rejects valid column names and allows unsafe expressions. | Use a strict token allowlist and restrict expensive expressions. |
+| **Correlation Cap** | Limits to 20 columns without notification. | Return a cap flag for the UI. |
+| **NLP Sampling** | Samples large datasets without notifying users. | Return sampling warnings and apply the specified threshold. |
+| **LDA Cap** | Topic modelling has no row limit. | Cap at 5,000 rows and report the limit. |
+| **Gemini Calls** | Synchronous calls block async execution; no timeout or configured retries. | Add a shared client with thread offloading, timeouts, retries, and key redaction. |
+| **Apply / Undo** | Failed operations can corrupt snapshot history; repeated undo can pop history incorrectly. | Save snapshots after successful operations and remove restored snapshots. |
+| **Reset** | Clears only working data, history, and profile cache. | Clear all dependent analysis results and generated reports. |
+| **Logging** | Inconsistent row counts, no request-level logs, and possible secret exposure. | Standardize logs, include request IDs and affected rows, and redact secrets. |
+
+## Files in this stage
+
+1. `core/security.py` — upload validation, formula security, filename sanitization, and path scrubbing
+2. `core/gemini_client.py` — shared Gemini client and call-site updates
+3. `core/exceptions.py` — uniform error handlers
+4. `main.py` — request IDs, request logging, security headers, and handler registration
+5. `core/logging_config.py` — secret redaction
+6. `services/session_service.py` — snapshot/undo fixes, full reset, and expired-session cleanup
+7. `routers/dataset.py` — chunked uploads and content validation
+8. **Router and service patches** — cleaning, transformation, NLP, EDA, and profiling fixes
+9. `tests/test_security.py` — security tests
+10. `tests/test_hardening.py` — hardening regression tests
+
+
+
