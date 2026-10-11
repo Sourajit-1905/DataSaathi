@@ -756,4 +756,88 @@ class MLRoadmapResponse(BaseModel):
 
 
 
+#  Report / Stage 9  
+
+class ReportGenerateRequest(BaseModel):
+    sections: Optional[list[str]] = None   # omit for all 10 sections
+    format: str = "html"                   # "pdf" | "html"
+
+
+class ReportSectionAvailability(BaseModel):
+    key: str
+    title: str
+    completed: bool
+    detail: str
+
+
+class ReportFormatSupport(BaseModel):
+    html: bool
+    pdf: bool
+
+
+class ReportSectionsResponse(BaseModel):
+    session_id: str
+    sections: list[ReportSectionAvailability]
+    formats: ReportFormatSupport
+
+
+class ReportIncludedSection(BaseModel):
+    key: str
+    title: str
+    completed: bool
+
+
+class ReportGenerateResponse(BaseModel):
+    session_id: str
+    status: str
+    format: str
+    generated_at: str
+    file_size_kb: float
+    sections_included: list[ReportIncludedSection]
+    sections_not_performed: list[str]
+    download_url: str
+    preview_url: str
+
+
+class ReportSection(BaseModel):
+    """
+    Internal shape of one assembled section (rendered by the template)
+    """
+    key: str
+    title: str
+    number: Optional[int] = None
+    performed: bool
+    note: Optional[str] = None
+    data: dict[str, Any] = {}
+
+
+class ReportDocument(BaseModel):
+    """
+    Internal shape of the assembled report (rendered by the template)
+    """
+    title: str
+    generated_at: str
+    dataset: dict[str, int]
+    sections: list[ReportSection]
+    not_performed: list[str]
+
+
+class ReportHistoryExport(BaseModel):
+    session_id: str
+    exported_at: str
+    operations: list[dict[str, Any]]
+    eda_analyses: list[dict[str, Any]]
+    statistical_tests: list[dict[str, Any]]
+    nlp_analyses: list[dict[str, Any]]
+
+
+
+
+
+
+
+
+
+
+
 

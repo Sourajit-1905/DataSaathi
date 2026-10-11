@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ report.title }}</title>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 15mm 18mm 15mm;
+    @bottom-center {
+      content: "DataSaathi  ·  Page " counter(page) " of " counter(pages);
+      font-size: 9px;
+      color: #8a8f98;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    line-height: 1.55;
+    color: #1f2933;
+    margin: 0;
+    padding: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page { max-width: 900px; margin: 0 auto; padding: 24px; }
+
+  h1 { font-size: 26px; margin: 0 0 4px 0; color: #12355b; }
+  h2 {
+    font-size: 16px; color: #12355b; margin: 28px 0 8px 0;
+    padding-bottom: 5px; border-bottom: 2px solid #12355b;
+    page-break-after: avoid;
+  }
+  h3 { font-size: 12px; color: #334e68; margin: 16px 0 5px 0; page-break-after: avoid; }
+  p { margin: 5px 0; }
+  ul { margin: 4px 0 4px 18px; padding: 0; }
+  li { margin: 2px 0; }
+  code, .mono { font-family: Menlo, Consolas, monospace; font-size: 10px; }
+
+  .muted { color: #7b8794; }
+  .small { font-size: 9.5px; }
+
+  .cover { padding: 8px 0 14px 0; border-bottom: 1px solid #d9dee5; margin-bottom: 10px; }
+  .cover .meta { color: #52606d; font-size: 11px; }
+
+  .toc { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  .toc td { padding: 4px 6px; border-bottom: 1px solid #eef1f4; }
+  .toc td.num { width: 28px; color: #7b8794; }
+  .toc td.status { text-align: right; width: 110px; }
+
+  table.data { width: 100%; border-collapse: collapse; margin: 6px 0 10px 0; }
+  table.data th {
+    background: #eef2f7; color: #243b53; text-align: left;
+    padding: 5px 7px; font-size: 10px; border-bottom: 1px solid #cbd2d9;
+  }
+  table.data td { padding: 4px 7px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+  table.data tr { page-break-inside: avoid; }
+  table.data td.r, table.data th.r { text-align: right; }
+
+  .cards { margin: 8px 0; font-size: 0; }
+  .card {
+    display: inline-block; width: 23.5%; margin: 0 1% 8px 0; vertical-align: top;
+    background: #f5f7fa; border: 1px solid #e1e6ec; border-radius: 4px;
+    padding: 8px 10px; font-size: 11px;
+  }
+  .card .k { color: #7b8794; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .card .v { font-size: 17px; font-weight: bold; color: #12355b; }
+
+  .badge {
+    display: inline-block; padding: 1px 8px; border-radius: 9px;
+    font-size: 9.5px; font-weight: bold; background: #e4e7eb; color: #3e4c59;
+  }
+  .badge.ok, .badge.excellent, .badge.ready, .badge.good { background: #d9f2e3; color: #14573a; }
+  .badge.warn, .badge.fair, .badge.needs_work { background: #fdefc8; color: #7a5200; }
+  .badge.bad, .badge.poor, .badge.not_ready { background: #fbdcdc; color: #8a1c1c; }
+  .badge.skip { background: #e4e7eb; color: #616e7c; }
+
+  .callout {
+    background: #f3f7fc; border-left: 4px solid #2f6db5;
+    padding: 9px 12px; margin: 8px 0;
+  }
+  .not-performed {
+    background: #f5f6f8; border: 1px dashed #b8c0cc; color: #52606d;
+    padding: 10px 12px; margin: 8px 0; border-radius: 4px;
+  }
+  .quote { border-left: 3px solid #cbd2d9; padding: 2px 10px; color: #3e4c59; margin: 4px 0; }
+</style>
+</head>
+<body>
+{% macro v(x) %}{% if x is none or x == '' %}—{% else %}{{ x }}{% endif %}{% endmacro %}
+{% macro n(x) %}{% if x is number %}{{ "{:,}".format(x) }}{% else %}—{% endif %}{% endmacro %}
+{% macro pct(x) %}{% if x is number %}{{ "%.2f"|format(x) }}%{% else %}—{% endif %}{% endmacro %}
+{% macro dec(x, places=4) %}{% if x is number %}{{ ("%." ~ places ~ "f")|format(x) }}{% else %}—{% endif %}{% endmacro %}
+{% macro delta(x) %}{% if x is number %}{{ "{:+,}".format(x) }}{% else %}—{% endif %}{% endmacro %}
+{% macro ts(x) %}{% if x %}{{ x[:19]|replace('T', ' ') }}{% else %}—{% endif %}{% endmacro %}
+{% macro words(x) %}{% if x %}{{ x|replace('_', ' ') }}{% else %}—{% endif %}{% endmacro %}
+{% macro tags(items) %}{% if items %}{{ items|join(', ') }}{% else %}—{% endif %}{% endmacro %}
+
+<div class="page">
+
+  <div class="cover">
+    <h1>{{ report.title }}</h1>
+    <div class="meta">
+      Generated {{ report.generated_at }}
+      &nbsp;·&nbsp; Dataset: {{ n(report.dataset.rows) }} rows × {{ n(report.dataset.columns) }} columns
+    </div>
+  </div>
+
+  <h3>Contents</h3>
+  <table class="toc">
+    {% for s in report.sections %}
+    <tr>
+      <td class="num">{{ s.number }}</td>
+      <td>{{ s.title }}</td>
+      <td class="status">
+        {% if s.performed %}<span class="badge ok">Included</span>
+        {% else %}<span class="badge skip">Not performed</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  {% for s in report.sections %}
+  {% set d = s.data %}
+  <h2>{{ s.number }}. {{ s.title }}</h2>
+
+  {% if not s.performed %}
+    <div class="not-performed">
+      <strong>Not performed.</strong>
+      {% if s.note %}{{ s.note }}{% endif %}
+    </div>
+
+  {% elif s.key == 'executive_summary' %}
+    <div class="callout">{{ d.summary }}</div>
+    {% if d.highlights %}
+      <h3>Key highlights</h3>
+      <ul>{% for h in d.highlights %}<li>{{ h }}</li>{% endfor %}</ul>
+    {% endif %}
+    <p class="muted small">
+      {% if d.source == 'gemini' %}Narrative written with Gemini from the summary figures in this report.
+      {% else %}Generated automatically from the analysis results in this report.{% endif %}
+    </p>
+
+  {% elif s.key == 'profiling' %}
+    <div class="cards">
+      <div class="card"><div class="k">Rows</div><div class="v">{{ n(d.dimensions.rows) }}</div></div>
+      <div class="card"><div class="k">Columns</div><div class="v">{{ n(d.dimensions.columns) }}</div></div>
+      <div class="card"><div class="k">Quality score</div>
+        <div class="v">{{ v(d.quality.score) }}<span class="small muted"> / 100</span></div></div>
+      <div class="card"><div class="k">Duplicate rows</div>
+        <div class="v">{{ n(d.duplicate_rows['count']) }}</div>
+        <div class="small muted">{{ pct(d.duplicate_rows.pct) }}</div></div>
+    </div>
+    {% if d.quality.label %}
+      <p>Overall data quality: <span class="badge {{ d.quality.label }}">{{ d.quality.label|capitalize }}</span></p>
+    {% endif %}
+    {% if d.quality.breakdown %}
+      <ul>{% for b in d.quality.breakdown %}<li>{{ b }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    {% if d.insights %}
+      <h3>Insights</h3>
+      <ul>{% for i in d.insights %}<li>{{ i }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    {% if d.missing_columns %}
+      <h3>Missing values</h3>
+      <table class="data">
+        <tr><th>Column</th><th class="r">Missing</th><th class="r">%</th><th>Severity</th></tr>
+        {% for r in d.missing_columns %}
+        <tr><td>{{ r.column }}</td><td class="r">{{ n(r['count']) }}</td><td class="r">{{ pct(r.pct) }}</td>
+            <td>{% if r.is_critical %}<span class="badge bad">Critical (&gt;30%)</span>{% else %}<span class="badge warn">Moderate</span>{% endif %}</td></tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+
+    {% if d.outlier_columns %}
+      <h3>Outliers (IQR method)</h3>
+      <table class="data">
+        <tr><th>Column</th><th class="r">Outliers</th><th class="r">%</th></tr>
+        {% for r in d.outlier_columns %}
+        <tr><td>{{ r.column }}</td><td class="r">{{ n(r.outlier_count) }}</td><td class="r">{{ pct(r.pct) }}</td></tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+
+    {% if d.skewed_columns %}
+      <h3>Highly skewed columns</h3>
+      <table class="data">
+        <tr><th>Column</th><th class="r">Skewness</th><th>Shape</th></tr>
+        {% for r in d.skewed_columns %}
+        <tr><td>{{ r.column }}</td><td class="r">{{ dec(r.skewness, 2) }}</td><td>{{ v(r.label) }}</td></tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+
+    {% if d.correlated_pairs %}
+      <h3>Strongly correlated pairs (|r| &gt; 0.7)</h3>
+      <table class="data">
+        <tr><th>Column A</th><th>Column B</th><th class="r">r</th></tr>
+        {% for r in d.correlated_pairs %}
+        <tr><td>{{ r.col1 }}</td><td>{{ r.col2 }}</td><td class="r">{{ dec(r.correlation, 3) }}</td></tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+
+    {% if d.suspicious %}
+      <h3>Suspicious values</h3>
+      <table class="data">
+        <tr><th>Column</th><th>Rule</th><th class="r">Flagged</th></tr>
+        {% for r in d.suspicious %}
+        <tr><td>{{ r.column }}</td><td>{{ v(r.rule) }}</td><td class="r">{{ n(r['count']) }}</td></tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+
+    {% if d.type_issues %}
+      <h3>Columns stored as the wrong type</h3>
+      <ul>{% for r in d.type_issues %}<li>{{ r.column }} looks like <strong>{{ v(r.suggested_type) }}</strong></li>{% endfor %}</ul>
+    {% endif %}
+
+    {% if d.identifier_columns or d.constant_columns %}
+      <h3>Columns to exclude from modelling</h3>
+      <ul>
+        {% if d.identifier_columns %}<li>Identifiers: {{ tags(d.identifier_columns) }}</li>{% endif %}
+        {% if d.constant_columns %}<li>Constant or near-constant: {{ tags(d.constant_columns) }}</li>{% endif %}
+      </ul>
+    {% endif %}
+
+    {% if d.potential_targets %}
+      <h3>Potential target columns</h3>
+      <table class="data">
+        <tr><th>Column</th><th>Suitable for</th><th>Why</th></tr>
+        {% for r in d.potential_targets %}
+        <tr><td>{{ r.column }}</td><td>{{ words(r.suitability) }}</td><td>{{ v(r.reasoning) }}</td></tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+
+  {% elif s.key == 'cleaning' %}
+    <div class="cards">
+      <div class="card"><div class="k">Operations</div><div class="v">{{ n(d.total_operations) }}</div></div>
+      <div class="card"><div class="k">Net row change</div><div class="v">{{ delta(d.net_rows_change) }}</div></div>
+      <div class="card"><div class="k">Net column change</div><div class="v">{{ delta(d.net_columns_change) }}</div></div>
+    </div>
+    {% if d.by_issue %}
+      <p>By issue type:
+        {% for i in d.by_issue %}{{ words(i.issue_type) }} ({{ i['count'] }}){% if not loop.last %}, {% endif %}{% endfor %}
+      </p>
+    {% endif %}
+    <table class="data">
+      <tr><th>#</th><th>Issue</th><th>Column</th><th>Strategy</th><th class="r">Rows</th><th class="r">Columns</th></tr>
+      {% for o in d.operations %}
+      <tr>
+        <td>{{ o.step }}</td><td>{{ words(o.issue_type) }}</td><td>{{ v(o.column) }}</td><td>{{ words(o.strategy) }}</td>
+        <td class="r">{{ n(o.rows_before) }} → {{ n(o.rows_after) }}</td>
+        <td class="r">{{ n(o.cols_before) }} → {{ n(o.cols_after) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% if d.truncated %}<p class="muted small">Showing the first {{ d.operations|length }} operations. See the history export for the complete log.</p>{% endif %}
+
+  {% elif s.key == 'transformation' %}
+    <div class="cards">
+      <div class="card"><div class="k">Operations</div><div class="v">{{ n(d.total_operations) }}</div></div>
+      <div class="card"><div class="k">Columns transformed</div><div class="v">{{ n(d.columns_transformed|length) }}</div></div>
+      <div class="card"><div class="k">New features</div><div class="v">{{ n(d.new_features|length) }}</div></div>
+      <div class="card"><div class="k">Encoded</div><div class="v">{{ n(d.counts.encoded) }}</div></div>
+    </div>
+    <ul>
+      <li>Scaled / re-distributed: {{ d.counts.scaled }}</li>
+      <li>Encoded: {{ d.counts.encoded }}</li>
+      <li>Binned: {{ d.counts.binned }}</li>
+      <li>Date parts extracted: {{ d.counts.datetime_extracted }}</li>
+      <li>Engineered features (polynomial, interaction, formula, lag, rolling): {{ d.counts.engineered }}</li>
+      <li>Dimensionality reduction: {{ d.counts.dim_reduction }}</li>
+      <li>Flagged as excluded from ML: {{ d.counts.excluded_from_ml }}</li>
+    </ul>
+    {% if d.new_features %}<p><strong>New columns created:</strong> {{ tags(d.new_features) }}</p>{% endif %}
+    <table class="data">
+      <tr><th>#</th><th>Transform</th><th>Column</th><th>New columns</th><th>Options</th><th class="r">Columns</th></tr>
+      {% for o in d.operations %}
+      <tr>
+        <td>{{ o.step }}</td><td>{{ words(o.transform_type) }}</td><td>{{ v(o.column) }}</td>
+        <td>{{ tags(o.new_columns) }}</td><td class="mono">{{ v(o.options) }}</td>
+        <td class="r">{{ n(o.cols_before) }} → {{ n(o.cols_after) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% if d.truncated %}<p class="muted small">Showing the first {{ d.operations|length }} operations. See the history export for the complete log.</p>{% endif %}
+
+  {% elif s.key == 'eda' %}
+    <div class="cards">
+      <div class="card"><div class="k">Analyses run</div><div class="v">{{ n(d.total_analyses) }}</div></div>
+      <div class="card"><div class="k">Numerical cols</div><div class="v">{{ n(d.column_types.numerical) }}</div></div>
+      <div class="card"><div class="k">Categorical cols</div><div class="v">{{ n(d.column_types.categorical) }}</div></div>
+      <div class="card"><div class="k">Datetime cols</div><div class="v">{{ n(d.column_types.datetime) }}</div></div>
+    </div>
+    {% if d.observations %}
+      <h3>Automatically detected patterns</h3>
+      <p class="muted small">These are potential findings, not proof of cause and effect.</p>
+      <ul>{% for o in d.observations %}<li>{{ o }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if d.strong_correlations %}
+      <h3>Strong correlations</h3>
+      <table class="data">
+        <tr><th>Column A</th><th>Column B</th><th class="r">r</th></tr>
+        {% for c in d.strong_correlations %}
+        <tr><td>{{ c.col1 }}</td><td>{{ c.col2 }}</td><td class="r">{{ dec(c.r, 3) }}</td></tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+    {% if d.skewed_columns %}<p><strong>Skewed columns:</strong> {{ tags(d.skewed_columns) }}</p>{% endif %}
+    {% if d.high_missing_columns %}
+      <p><strong>Columns with notable missing data:</strong>
+        {% for h in d.high_missing_columns %}{{ h.column }} ({{ pct(h.pct) }}){% if not loop.last %}, {% endif %}{% endfor %}
+      </p>
+    {% endif %}
+    {% if d.analyses %}
+      <h3>Analyses performed</h3>
+      <table class="data">
+        <tr><th>Type</th><th>Columns</th><th class="r">Filters</th><th class="r">Rows analysed</th></tr>
+        {% for a in d.analyses %}
+        <tr><td>{{ words(a.analysis_type) }}</td><td>{{ v(a.columns) }}</td>
+            <td class="r">{{ a.filters }}</td><td class="r">{{ n(a.rows_analysed) }}</td></tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+    {% if d.questions %}
+      <h3>Questions asked</h3>
+      <ul>{% for q in d.questions %}<li>{{ q }}</li>{% endfor %}</ul>
+    {% endif %}
+
+  {% elif s.key == 'statistics' %}
+    <div class="cards">
+      <div class="card"><div class="k">Tests run</div><div class="v">{{ n(d.total_tests) }}</div></div>
+      <div class="card"><div class="k">Significant (p &lt; 0.05)</div><div class="v">{{ n(d.significant_count) }}</div></div>
+    </div>
+    <table class="data">
+      <tr><th>Test</th><th>Variables</th><th class="r">p-value</th><th>Result</th></tr>
+      {% for t in d.tests %}
+      <tr>
+        <td>{{ words(t.test_name) }}</td>
+        <td class="mono">{{ v(t.options) }}</td>
+        <td class="r">{{ dec(t.p_value, 4) }}</td>
+        <td>{% if t.significant %}<span class="badge ok">Significant</span>{% else %}<span class="badge skip">Not significant</span>{% endif %}</td>
+      </tr>
+      {% if t.plain_english %}
+      <tr><td colspan="4"><div class="quote">{{ t.plain_english }}</div></td></tr>
+      {% endif %}
+      {% endfor %}
+    </table>
+    <p class="muted small">Statistical significance does not by itself show that an effect is large or important, or that one variable causes another.</p>
+
+  {% elif s.key == 'nlp' %}
+    <p>{{ n(d.total_analyses) }} NLP analyses were run:
+      {% for a in d.analysis_counts %}{{ words(a.analysis_type) }} ({{ a['count'] }}){% if not loop.last %}, {% endif %}{% endfor %}.
+    </p>
+    {% for c in d.columns %}
+      <h3>Text column: {{ c.column }}</h3>
+      {% if c.error %}
+        <div class="not-performed">{{ c.error }}</div>
+      {% else %}
+        <div class="cards">
+          <div class="card"><div class="k">Documents</div><div class="v">{{ n(c.quality.total_documents) }}</div></div>
+          <div class="card"><div class="k">Text quality</div><div class="v">{{ v(c.quality.score) }}</div>
+            <div class="small muted">{{ v(c.quality.label) }}</div></div>
+          <div class="card"><div class="k">Avg words</div><div class="v">{{ v(c.quality.avg_word_count) }}</div></div>
+          <div class="card"><div class="k">Vocabulary</div><div class="v">{{ n(c.quality.vocabulary_size) }}</div></div>
+        </div>
+        {% if c.sentiment.overall %}
+          <p>Overall sentiment: <strong>{{ c.sentiment.overall }}</strong>
+            ({{ pct(c.sentiment.positive_pct) }} positive, {{ pct(c.sentiment.negative_pct) }} negative,
+            {{ pct(c.sentiment.neutral_pct) }} neutral)</p>
+        {% endif %}
+        {% if c.top_keywords %}<p><strong>Top keywords:</strong> {{ tags(c.top_keywords) }}</p>{% endif %}
+        {% if c.topics %}
+          <p><strong>Topics:</strong></p>
+          <ul>{% for t in c.topics %}<li>{{ tags(t.keywords) }} <span class="muted">({{ pct(t.proportion) }} of documents)</span></li>{% endfor %}</ul>
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+    {% if d.columns_not_summarised %}
+      <p class="muted small">{{ d.columns_not_summarised }} further text column(s) were analysed but are not summarised here.</p>
+    {% endif %}
+
+  {% elif s.key == 'ml_strategy' %}
+    <div class="callout">
+      <strong>Problem type:</strong> {{ words(d.problem_type) }}
+      {% if d.target %}&nbsp;·&nbsp; <strong>Target:</strong> {{ d.target }}{% endif %}
+      {% if d.objective %}<br><strong>Stated goal:</strong> {{ d.objective }}{% endif %}
+    </div>
+    {% if d.summary %}<p>{{ d.summary }}</p>{% endif %}
+    <p class="muted small">This is advisory only. No model has been trained, and no performance figures exist yet.</p>
+
+    <h3>Dataset readiness</h3>
+    <p>
+      <span class="badge {{ d.readiness.label }}">{{ words(d.readiness.label)|capitalize }}</span>
+      &nbsp; score {{ v(d.readiness.score) }} / 100
+      {% if d.imbalance.is_imbalanced %}
+        &nbsp;·&nbsp; <span class="badge warn">Class imbalance: {{ v(d.imbalance.severity) }}</span>
+      {% endif %}
+    </p>
+    {% if d.readiness.warnings %}<ul>{% for w in d.readiness.warnings %}<li>{{ w }}</li>{% endfor %}</ul>{% endif %}
+
+    <h3>Top recommended models</h3>
+    <table class="data">
+      <tr><th>Model</th><th class="r">Suitability</th><th>Why</th></tr>
+      {% for m in d.top_models %}
+      <tr><td><strong>{{ m.name }}</strong></td>
+          <td class="r">{{ v(m.score) }} <span class="muted">({{ v(m.suitability) }})</span></td>
+          <td>{{ v(m.reasoning) }}</td></tr>
+      {% endfor %}
+    </table>
+
+    <h3>Evaluation approach</h3>
+    <ul>
+      <li>Primary metric: <strong>{{ v(d.metrics.primary) }}</strong>{% if d.metrics.reason %} — {{ d.metrics.reason }}{% endif %}</li>
+      {% if d.metrics.secondary %}<li>Also track: {{ tags(d.metrics.secondary) }}</li>{% endif %}
+      <li>Validation: {{ v(d.validation) }}</li>
+      <li>Train/test split: {{ words(d.split) }}</li>
+    </ul>
+
+    {% if d.preprocessing %}
+      <h3>Recommended preprocessing</h3>
+      <ul>{% for p in d.preprocessing %}<li>{{ p }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    <h3>Modelling roadmap</h3>
+    <table class="data">
+      <tr><th>#</th><th>Step</th><th>What to do</th></tr>
+      {% for r in d.roadmap %}
+      <tr><td>{{ r.step_number }}</td><td><strong>{{ r.title }}</strong></td><td>{{ r.description }}</td></tr>
+      {% endfor %}
+    </table>
+
+  {% elif s.key == 'history' %}
+    <div class="cards">
+      <div class="card"><div class="k">Data operations</div><div class="v">{{ n(d.total_operations) }}</div></div>
+      <div class="card"><div class="k">EDA analyses</div><div class="v">{{ n(d.analysis_counts.eda) }}</div></div>
+      <div class="card"><div class="k">Statistical tests</div><div class="v">{{ n(d.analysis_counts.statistics) }}</div></div>
+      <div class="card"><div class="k">NLP analyses</div><div class="v">{{ n(d.analysis_counts.nlp) }}</div></div>
+    </div>
+    <p class="muted small">Every cleaning and transformation applied to the dataset, in order.</p>
+    <table class="data">
+      <tr><th>#</th><th>Stage</th><th>Action</th><th>Column</th><th class="r">Rows</th><th class="r">Columns</th><th>Time (UTC)</th></tr>
+      {% for o in d.operations %}
+      <tr>
+        <td>{{ o.step }}</td><td>{{ words(o.stage)|capitalize }}</td><td>{{ words(o.action) }}</td><td>{{ v(o.column) }}</td>
+        <td class="r">{{ n(o.rows_before) }} → {{ n(o.rows_after) }}</td>
+        <td class="r">{{ n(o.cols_before) }} → {{ n(o.cols_after) }}</td>
+        <td class="small">{{ ts(o.timestamp) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+
+  {% elif s.key == 'appendix' %}
+    <h3>Column map ({{ n(d.total_columns) }} columns)</h3>
+    <table class="data">
+      <tr><th>Column</th><th>Type</th><th class="r">Missing</th><th class="r">Unique</th><th>Detected role</th></tr>
+      {% for c in d.column_map %}
+      <tr><td>{{ c.column }}</td><td class="mono">{{ c.dtype }}</td>
+          <td class="r">{{ pct(c.missing_pct) }}</td><td class="r">{{ n(c.unique_count) }}</td><td>{{ v(c.role) }}</td></tr>
+      {% endfor %}
+    </table>
+    {% if d.truncated %}<p class="muted small">Showing the first {{ d.column_map|length }} of {{ d.total_columns }} columns.</p>{% endif %}
+
+    {% if d.numeric_summary %}
+      <h3>Numeric column statistics</h3>
+      <table class="data">
+        <tr><th>Column</th><th class="r">Mean</th><th class="r">Std</th><th class="r">Min</th><th class="r">Median</th><th class="r">Max</th></tr>
+        {% for c in d.numeric_summary %}
+        <tr><td>{{ c.column }}</td>
+            <td class="r">{{ dec(c['mean'], 2) }}</td><td class="r">{{ dec(c.std, 2) }}</td>
+            <td class="r">{{ dec(c['min'], 2) }}</td><td class="r">{{ dec(c.median, 2) }}</td>
+            <td class="r">{{ dec(c['max'], 2) }}</td></tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+  {% endif %}
+  {% endfor %}
+
+  <p class="muted small" style="margin-top:28px; border-top:1px solid #d9dee5; padding-top:8px;">
+    Generated by DataSaathi on {{ report.generated_at }}. Figures reflect the working dataset and the analyses
+    recorded in this session at that time.
+  </p>
+
+</div>
+</body>
+</html>

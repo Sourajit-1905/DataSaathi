@@ -99,7 +99,11 @@ def _int(value, default: int = 0) -> int:
 
 
 def _plural(n: int, word: str) -> str:
-    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+    if n == 1:
+        return f"{n} {word}"
+    if word.endswith("analysis"):
+        return f"{n} {word[:-2]}es"   # analysis -> analyses
+    return f"{n} {word}s"
 
 
 def _options_text(options) -> str:
@@ -648,14 +652,19 @@ def _rule_based_summary(facts: dict) -> dict:
     prep = []
     if facts.get("cleaning_operations"):
         prep.append(_plural(facts["cleaning_operations"], "cleaning operation"))
+
     if facts.get("transformation_operations"):
         prep.append(_plural(facts["transformation_operations"], "transformation"))
+
     if prep:
         parts.append("The data was prepared with " + " and ".join(prep) + ".")
 
     if facts.get("eda_analyses"):
-        parts.append(f"{_plural(facts['eda_analyses'], 'exploratory analysis')} (analyses) were recorded."
-                     .replace("analysis (analyses) were", "analysis was").replace(" (analyses)", ""))
+        n_eda = facts["eda_analyses"]
+        parts.append(
+            f"{_plural(n_eda, 'exploratory analysis')} {'was' if n_eda == 1 else 'were'} recorded."
+        )
+
     if facts.get("stats_tests"):
         parts.append(
             f"{facts['significant_tests']} of {_plural(facts['stats_tests'], 'statistical test')} "
@@ -663,6 +672,7 @@ def _rule_based_summary(facts: dict) -> dict:
             if facts["stats_tests"] != 1 else
             f"The statistical test was {'significant' if facts['significant_tests'] else 'not significant'} at the 5% level."
         )
+
     if "ml" in facts:
         ml = facts["ml"]
         text = f"The modelling task was framed as {str(ml['problem_type']).replace('_', ' ')}"
@@ -671,6 +681,7 @@ def _rule_based_summary(facts: dict) -> dict:
         if ml.get("top_model"):
             text += f"; the highest-ranked starting model is {ml['top_model']}"
         parts.append(text + ".")
+        
     if facts.get("not_performed"):
         parts.append("Not performed: " + ", ".join(facts["not_performed"]) + ".")
 
