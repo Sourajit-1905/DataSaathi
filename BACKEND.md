@@ -443,6 +443,50 @@ The advisory stage. It does not train models; it analyzes the cleaned and transf
 This service is **advisory only** — it recommends ML approaches and does not train or evaluate models.
 
 
+# BACKEND STAGE 9 — Report Generation
 
+## What this stage is
+
+The packaging stage. It collects results from Stages 2–8, assembles them into a single report, and exports a downloadable PDF or HTML file.
+
+## What it does
+
+- Generates a 10-section report covering profiling, cleaning, transformation, EDA, statistics, NLP, ML strategy, operation history, and appendix, with an Executive Summary
+- Lets users select report sections and output format (PDF or HTML)
+- Marks unperformed sections as "Not performed"
+- Generates the Executive Summary using Gemini, with rule-based fallback; only summaries are sent, never raw rows
+- Renders reports using a Jinja2 template with autoescaping
+- Provides report downloads and full operation history as JSON
+- Returns download URLs instead of filesystem paths
+
+## Where it's used
+
+- **Frontend Report page** — section checklist, completion badges, PDF/HTML toggle, preview, and download options
+- **Gemini** — generates only the Executive Summary
+- **Earlier stages** — reads their results without modifying them
+
+## Files in this stage
+
+1. `services/report_service.py` — collects section data, generates the Executive Summary, renders, and writes files
+2. `prompts/report_summary.txt` — Gemini prompt for the Executive Summary
+3. `templates/report_template.html` — Jinja2 report template with print CSS for PDF
+4. `routers/report.py` — `generate`, `download/{format}`, and `history-export` endpoints
+5. `models/schemas.py` — updated with report schemas
+6. `tests/test_report.py` — verification tests
+
+## Report Sections
+
+| No. | Section | Description |
+|---:|---|---|
+| **1** | Executive Summary | Summarizes key findings and recommendations. |
+| **2** | Profiling | Reports dataset structure, quality, and characteristics. |
+| **3** | Cleaning | Documents detected issues and applied fixes. |
+| **4** | Transformation | Summarizes transformations and feature engineering. |
+| **5** | EDA | Presents exploratory analysis findings and patterns. |
+| **6** | Statistics | Summarizes statistical tests, significance, and effect sizes. |
+| **7** | NLP | Presents text analysis results and insights. |
+| **8** | ML Strategy | Documents recommended models, preprocessing, and evaluation. |
+| **9** | Full Operation History | Records operations performed throughout the workflow. |
+| **10** | Appendix | Provides supporting information and additional details. |
 
 
