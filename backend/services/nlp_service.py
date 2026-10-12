@@ -38,6 +38,9 @@ Implements 27 NLP functions across 7 categories:
                    N27 NLP summary for report
 """
 
+
+from core.gemini_client import generate_json, render_prompt
+
 import json
 import logging
 import re
@@ -86,42 +89,25 @@ def _get_embedder():
 
 async def _get_gemini_nlp_insights(summary: dict) -> list[str] | None:
     try:
-        from google import genai as google_genai
-
-        api_key = settings.GEMINI_API_KEY
-        if not api_key:
+        prompt = render_prompt(
+            "nlp_insights.txt",
+            NLP_SUMMARY=json.dumps(summary, indent=2, default=str),
+        )
+        if prompt is None:
             return None
 
-        prompt_path = Path("prompts/nlp_insights.txt")
-        if not prompt_path.exists():
+        parsed = await generate_json(prompt)
+        if not parsed:
             return None
 
-        prompt_template = prompt_path.read_text(encoding="utf-8")
-        prompt = prompt_template.replace(
-            "{{NLP_SUMMARY}}", json.dumps(summary, indent=2)
-        )
-
-        client = google_genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=prompt,
-        )
-        raw = response.text.strip()
-        if raw.startswith("```"):
-            raw = re.sub(r"^```[a-z]*\n?", "", raw)
-            raw = re.sub(r"\n?```$", "", raw)
-
-        parsed = json.loads(raw)
         insights = parsed.get("insights", [])
         if isinstance(insights, list) and len(insights) >= 2:
-            return insights
+            return [str(i) for i in insights]
 
     except Exception as e:
         logger.warning(f"Gemini NLP insights failed: {e}")
 
     return None
-
-
 
 
 from pandas import DataFrame

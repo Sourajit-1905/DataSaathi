@@ -70,9 +70,7 @@ _FILENAME_JUNK = re.compile(r"[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2066-\u2
 
 
 def get_extension(filename: str | None) -> str:
-    """
-    Lower-cased extension including the dot, or '' if there is none.
-    """
+    """Lower-cased extension including the dot, or '' if there is none."""
     if not filename or "." not in filename:
         return ""
     return "." + filename.rsplit(".", 1)[-1].lower()
@@ -94,16 +92,16 @@ def sanitize_filename(name, default: str = "upload") -> str:
 
     if len(name) > MAX_FILENAME_LENGTH:
         stem, dot, ext = name.rpartition(".")
-        if dot and 0 < len(ext) <= 10: name = stem[: MAX_FILENAME_LENGTH - len(ext) - 1] + "." + ext
-        else: name = name[:MAX_FILENAME_LENGTH]
+        if dot and 0 < len(ext) <= 10:
+            name = stem[: MAX_FILENAME_LENGTH - len(ext) - 1] + "." + ext
+        else:
+            name = name[:MAX_FILENAME_LENGTH]
 
     return name or default
 
 
 def normalise_mime(content_type: str | None) -> str:
-    """
-    'text/csv; charset=utf-8' -> 'text/csv'.
-    """
+    """'text/csv; charset=utf-8' -> 'text/csv'."""
     if not content_type:
         return ""
     return content_type.split(";", 1)[0].strip().lower()
@@ -380,10 +378,6 @@ def safe_detail(message, max_len: int = 500) -> str:
     if len(text) > max_len:
         text = text[: max_len - 1].rstrip() + "…"
     return text or GENERIC_ERROR_DETAIL
-
-
-
-
 
 
 

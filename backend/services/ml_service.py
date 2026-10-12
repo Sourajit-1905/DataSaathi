@@ -3,7 +3,7 @@ import logging
 import math
 import re
 from pathlib import Path
-
+from core.gemini_client import generate_json, render_prompt
 import numpy as np
 import pandas as pd
 
@@ -1121,22 +1121,11 @@ def _rule_based_reasoning(problem: dict, models: list[dict], objective: str, ctx
 
     return {"summary": summary, "model_reasons": model_reasons, "source": "rule_based"}
 
-
 async def generate_reasoning(problem: dict, models: list[dict], objective: str, ctx: dict,
                              imbalance: dict) -> dict:
     fallback = _rule_based_reasoning(problem, models, objective, ctx)
 
     try:
-        from google import genai as google_genai
-
-        api_key = settings.GEMINI_API_KEY
-        if not api_key:
-            return fallback
-
-        prompt_path = Path("prompts/ml_strategy.txt")
-        if not prompt_path.exists():
-            return fallback
-
         context = {
             "problem_type": problem["problem_type"],
             "target": problem.get("target"),
@@ -1156,20 +1145,18 @@ async def generate_reasoning(problem: dict, models: list[dict], objective: str, 
             ],
         }
 
-        prompt = (
-            prompt_path.read_text(encoding="utf-8")
-            .replace("{{ML_CONTEXT}}", json.dumps(_sanitize(context), indent=2))
-            .replace("{{USER_OBJECTIVE}}", (objective or "Not stated").strip()[:500])
+        prompt = render_prompt(
+            "ml_strategy.txt",
+            ML_CONTEXT=json.dumps(_sanitize(context), indent=2, default=str),
+            USER_OBJECTIVE=(objective or "Not stated").strip()[:500],
         )
+        if prompt is None:
+            return fallback
 
-        client = google_genai.Client(api_key=api_key)
-        response = client.models.generate_content(model=settings.GEMINI_MODEL, contents=prompt)
-        raw = response.text.strip()
-        if raw.startswith("```"):
-            raw = re.sub(r"^```[a-z]*\n?", "", raw)
-            raw = re.sub(r"\n?```$", "", raw)
+        parsed = await generate_json(prompt)
+        if not parsed:
+            return fallback
 
-        parsed = json.loads(raw)
         summary = parsed.get("summary", "")
         model_reasons = parsed.get("model_reasons", {})
         if isinstance(summary, str) and len(summary) > 20 and isinstance(model_reasons, dict):
@@ -1181,7 +1168,6 @@ async def generate_reasoning(problem: dict, models: list[dict], objective: str, 
         logger.warning(f"Gemini ML reasoning failed: {e}")
 
     return fallback
-
 
 # 18. Master: build the full strategy
 

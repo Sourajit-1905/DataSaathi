@@ -2,7 +2,8 @@ import json
 import logging
 import re
 from pathlib import Path
-
+import json
+from core.gemini_client import generate_json, render_prompt
 import numpy as np
 import pandas as pd
 
@@ -20,46 +21,30 @@ async def _get_gemini_explanation(
     stats: dict,
 ) -> str | None:
     try:
-        from google import genai as google_genai
-
-        api_key = settings.GEMINI_API_KEY
-        if not api_key:
-            return None
-
-        prompt_path = Path("prompts/transform_recommend.txt")
-        if not prompt_path.exists():
-            return None
-
-        prompt_template = prompt_path.read_text(encoding="utf-8")
         payload = {
             "transform_type": transform_type,
             "column": column,
             "stats": stats,
         }
-        prompt = prompt_template.replace(
-            "{{TRANSFORM_PAYLOAD}}", json.dumps(payload, indent=2)
+        prompt = render_prompt(
+            "transform_recommend.txt",
+            TRANSFORM_PAYLOAD=json.dumps(payload, indent=2, default=str),
         )
+        if prompt is None:
+            return None
 
-        client = google_genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=prompt,
-        )
-        raw = response.text.strip()
-        if raw.startswith("```"):
-            raw = re.sub(r"^```[a-z]*\n?", "", raw)
-            raw = re.sub(r"\n?```$", "", raw)
+        parsed = await generate_json(prompt)
+        if not parsed:
+            return None
 
-        parsed = json.loads(raw)
         explanation = parsed.get("explanation", "")
-        if explanation and len(explanation) > 10:
-            return explanation
+        if isinstance(explanation, str) and len(explanation) > 10:
+            return explanation.strip()
 
     except Exception as e:
         logger.warning(f"Gemini explanation failed for {transform_type}/{column}: {e}")
 
     return None
-
 
 def _rule_based_explanation(transform_type: str, column: str, stats: dict) -> str:
     skew = stats.get("skewness", 0)

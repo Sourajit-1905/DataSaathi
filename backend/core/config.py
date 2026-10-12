@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "uploads"
 
     # Gemini AI
+
+    GEMINI_TIMEOUT_SECONDS: int = 15
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.0-flash"
     GEMINI_MAX_RETRIES: int = 3

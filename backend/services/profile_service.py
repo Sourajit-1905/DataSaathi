@@ -11,6 +11,9 @@ Gemini is called at the end to rewrite P22 insights as a narrative.
 Fallback: if Gemini fails, rule-based templated insights are returned.
 """
 
+import json
+from core.gemini_client import generate_json, render_prompt
+
 import re
 import logging
 from datetime import datetime
@@ -745,26 +748,11 @@ def _generate_rule_based_insights(all_results: dict) -> list[str]:
 
 async def _generate_gemini_insights(all_results: dict) -> list[str] | None:
     """
-    Send profiling summary to Gemini and get back a list of insight strings.
+    Send the profiling summary to Gemini and get back a list of insight strings.
     Returns None on any failure so the caller can fall back to rule-based.
+    Only summary statistics are sent, never raw rows.
     """
     try:
-        from pathlib import Path
-
-        api_key = settings.GEMINI_API_KEY
-        if not api_key:
-            return None
-
-        from google import genai as google_genai
-
-        client = google_genai.Client(api_key=api_key)
-
-        prompt_path = Path("prompts/profiling_insights.txt")
-        if not prompt_path.exists():
-            return None
-        prompt_template = prompt_path.read_text(encoding="utf-8")
-
-        # Build a compact summary to send — never raw data
         summary = {
             "dimensions": all_results.get("dimensions"),
             "quality_summary": all_results.get("quality_summary"),
@@ -785,24 +773,20 @@ async def _generate_gemini_insights(all_results: dict) -> list[str] | None:
             "potential_targets": all_results.get("potential_targets"),
         }
 
-        import json
-        prompt = prompt_template.replace("{{PROFILING_SUMMARY}}", json.dumps(summary, indent=2))
-
-        response = client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=prompt,
+        prompt = render_prompt(
+            "profiling_insights.txt",
+            PROFILING_SUMMARY=json.dumps(summary, indent=2, default=str),
         )
-        raw = response.text.strip()
+        if prompt is None:
+            return None
 
-        # Strip markdown fences if present
-        if raw.startswith("```"):
-            raw = re.sub(r"^```[a-z]*\n?", "", raw)
-            raw = re.sub(r"\n?```$", "", raw)
+        parsed = await generate_json(prompt)
+        if not parsed:
+            return None
 
-        parsed = json.loads(raw)
         insights = parsed.get("insights", [])
         if isinstance(insights, list) and len(insights) >= 3:
-            return insights
+            return [str(i) for i in insights]
 
     except Exception as e:
         logger.warning(f"Gemini insights generation failed: {e}. Falling back to rule-based.")

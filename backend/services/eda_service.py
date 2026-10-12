@@ -21,7 +21,7 @@ Implements all 14 EDA sub-modules from the full spec:
 All functions are READ-ONLY — working CSV is never modified.
 Filters are applied in memory before every analysis.
 """
-
+from core.gemini_client import generate_json, render_prompt
 
 import json
 import logging
@@ -888,7 +888,6 @@ def _generate_rule_based_eda_insights(df: pd.DataFrame) -> list[str]:
         "Dataset loaded successfully. Run individual analyses for detailed insights."
     ]
 
-
 async def generate_eda_insights(df: pd.DataFrame) -> dict:
     """
     Generate EDA insights — Gemini narrative if available,
@@ -897,17 +896,6 @@ async def generate_eda_insights(df: pd.DataFrame) -> dict:
     rule_insights = _generate_rule_based_eda_insights(df)
 
     try:
-        from google import genai as google_genai
-
-        api_key = settings.GEMINI_API_KEY
-        if not api_key:
-            return {"insights": rule_insights, "source": "rule_based"}
-
-        prompt_path = Path("prompts/eda_question.txt")
-        if not prompt_path.exists():
-            return {"insights": rule_insights, "source": "rule_based"}
-
-        # Build compact summary for Gemini
         num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         cat_cols = df.select_dtypes(include=["object"]).columns.tolist()
 
@@ -923,33 +911,22 @@ async def generate_eda_insights(df: pd.DataFrame) -> dict:
             "rule_based_insights": rule_insights,
         }
 
-        prompt_template = prompt_path.read_text(encoding="utf-8")
-        prompt = prompt_template.replace(
-            "{{EDA_SUMMARY}}", json.dumps(summary, indent=2)
-        ).replace("{{USER_QUESTION}}", "Generate insights from this dataset summary.")
-
-        client = google_genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=prompt,
+        prompt = render_prompt(
+            "eda_question.txt",
+            EDA_SUMMARY=json.dumps(summary, indent=2, default=str),
+            USER_QUESTION="Generate insights from this dataset summary.",
         )
-        raw = response.text.strip()
-        if raw.startswith("```"):
-            raw = re.sub(r"^```[a-z]*\n?", "", raw)
-            raw = re.sub(r"\n?```$", "", raw)
-
-        parsed = json.loads(raw)
-        insights = parsed.get("insights", [])
-        if isinstance(insights, list) and len(insights) >= 3:
-            return {"insights": insights, "source": "gemini"}
+        if prompt is not None:
+            parsed = await generate_json(prompt)
+            insights = parsed.get("insights", []) if parsed else []
+            if isinstance(insights, list) and len(insights) >= 3:
+                return {"insights": [str(i) for i in insights], "source": "gemini"}
 
     except Exception as e:
         logger.warning(f"Gemini EDA insights failed: {e}")
 
     return {"insights": rule_insights, "source": "rule_based"}
 
-
-# 10  Natural Language Question (Gemini)
 
 async def answer_question(df: pd.DataFrame, question: str) -> dict:
     """
@@ -958,66 +935,49 @@ async def answer_question(df: pd.DataFrame, question: str) -> dict:
     and returns a plain English answer + supporting data.
     Fallback: keyword-based routing.
     """
+    question = (question or "").strip()[:1000]
     question_lower = question.lower()
+
+    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    cat_cols = df.select_dtypes(include=["object"]).columns.tolist()
+    dt_cols = df.select_dtypes(include=["datetime64"]).columns.tolist()
 
     # Try Gemini first
     try:
-        from google import genai as google_genai
-
-        api_key = settings.GEMINI_API_KEY
-        if api_key:
-            prompt_path = Path("prompts/eda_question.txt")
-            if prompt_path.exists():
-                num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-                cat_cols = df.select_dtypes(include=["object"]).columns.tolist()
-                dt_cols = df.select_dtypes(include=["datetime64"]).columns.tolist()
-
-                summary = {
-                    "shape": {"rows": len(df), "columns": len(df.columns)},
-                    "numerical_columns": num_cols[:15],
-                    "categorical_columns": cat_cols[:15],
-                    "datetime_columns": dt_cols,
-                    "sample_stats": {
-                        col: {
-                            "mean": round(float(df[col].dropna().mean()), 4),
-                            "std": round(float(df[col].dropna().std()), 4),
-                        }
-                        for col in num_cols[:5]
-                        if len(df[col].dropna()) > 0
-                    },
+        summary = {
+            "shape": {"rows": len(df), "columns": len(df.columns)},
+            "numerical_columns": num_cols[:15],
+            "categorical_columns": cat_cols[:15],
+            "datetime_columns": dt_cols,
+            "sample_stats": {
+                col: {
+                    "mean": round(float(df[col].dropna().mean()), 4),
+                    "std": round(float(df[col].dropna().std()), 4),
                 }
+                for col in num_cols[:5]
+                if len(df[col].dropna()) > 0
+            },
+        }
 
-                prompt_template = prompt_path.read_text(encoding="utf-8")
-                prompt = prompt_template.replace(
-                    "{{EDA_SUMMARY}}", json.dumps(summary, indent=2)
-                ).replace("{{USER_QUESTION}}", question)
-
-                client = google_genai.Client(api_key=api_key)
-                response = client.models.generate_content(
-                    model=settings.GEMINI_MODEL,
-                    contents=prompt,
-                )
-                raw = response.text.strip()
-                if raw.startswith("```"):
-                    raw = re.sub(r"^```[a-z]*\n?", "", raw)
-                    raw = re.sub(r"\n?```$", "", raw)
-
-                parsed = json.loads(raw)
-                if parsed.get("answer"):
-                    return {
-                        "question": question,
-                        "answer": parsed["answer"],
-                        "suggested_analysis": parsed.get("suggested_analysis"),
-                        "source": "gemini",
-                    }
+        prompt = render_prompt(
+            "eda_question.txt",
+            EDA_SUMMARY=json.dumps(summary, indent=2, default=str),
+            USER_QUESTION=question,
+        )
+        if prompt is not None:
+            parsed = await generate_json(prompt)
+            if parsed and parsed.get("answer"):
+                return {
+                    "question": question,
+                    "answer": str(parsed["answer"]),
+                    "suggested_analysis": parsed.get("suggested_analysis"),
+                    "source": "gemini",
+                }
 
     except Exception as e:
         logger.warning(f"Gemini question answering failed: {e}")
 
     # Fallback — keyword routing
-    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    cat_cols = df.select_dtypes(include=["object"]).columns.tolist()
-
     if any(kw in question_lower for kw in ["correlat", "related", "relationship"]):
         result = multivariate_analysis(df)
         answer = f"Found {len(result.get('strong_pairs', []))} strong correlations."

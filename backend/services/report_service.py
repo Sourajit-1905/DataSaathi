@@ -1,4 +1,4 @@
-
+from core.gemini_client import generate_json, render_prompt
 
 import asyncio
 import json
@@ -699,31 +699,19 @@ def _rule_based_summary(facts: dict) -> dict:
 
     return {"summary": " ".join(parts), "highlights": highlights[:6], "source": "rule_based"}
 
-
-def _gemini_summary(facts: dict) -> dict | None:
+async def _gemini_summary(facts: dict) -> dict | None:
     try:
-        from google import genai as google_genai
-
-        api_key = settings.GEMINI_API_KEY
-        if not api_key:
-            return None
-
-        prompt_path = Path("prompts/report_summary.txt")
-        if not prompt_path.exists():
-            return None
-
-        prompt = prompt_path.read_text(encoding="utf-8").replace(
-            "{{REPORT_FACTS}}", json.dumps(_sanitize(facts), indent=2)
+        prompt = render_prompt(
+            "report_summary.txt",
+            REPORT_FACTS=json.dumps(_sanitize(facts), indent=2, default=str),
         )
+        if prompt is None:
+            return None
 
-        client = google_genai.Client(api_key=api_key)
-        response = client.models.generate_content(model=settings.GEMINI_MODEL, contents=prompt)
-        raw = response.text.strip()
-        if raw.startswith("```"):
-            raw = re.sub(r"^```[a-z]*\n?", "", raw)
-            raw = re.sub(r"\n?```$", "", raw)
+        parsed = await generate_json(prompt)
+        if not parsed:
+            return None
 
-        parsed = json.loads(raw)
         summary = parsed.get("summary", "")
         highlights = parsed.get("highlights", [])
         if isinstance(summary, str) and len(summary) > 30:
@@ -734,15 +722,17 @@ def _gemini_summary(facts: dict) -> dict | None:
                 "highlights": [str(h) for h in highlights][:6],
                 "source": "gemini",
             }
+
     except Exception as e:
         logger.warning(f"Gemini executive summary failed: {e}")
+
     return None
 
 
 async def collect_executive_summary(df: pd.DataFrame, collected: dict) -> dict:
     facts = _build_facts(df, collected)
     fallback = _rule_based_summary(facts)
-    result = _gemini_summary(facts)
+    result = await _gemini_summary(facts)
     if result is None:
         result = fallback
     elif not result["highlights"]:

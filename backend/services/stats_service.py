@@ -31,7 +31,7 @@ Implements 21 statistical test functions:
 Each test returns: statistic, p_value, effect_size, interpretation,
 assumption_checks, and plain_english (Gemini or rule-based).
 """
-
+from core.gemini_client import generate_json, render_prompt
 import json
 import logging
 import re
@@ -67,20 +67,8 @@ def _sanitize_result(obj):
     return obj
 
 # Gemini plain English explanation
-
 async def _get_gemini_explanation(test_name: str, result: dict) -> str | None:
     try:
-        from google import genai as google_genai
-
-        api_key = settings.GEMINI_API_KEY
-        if not api_key:
-            return None
-
-        prompt_path = Path("prompts/stats_explain.txt")
-        if not prompt_path.exists():
-            return None
-
-        prompt_template = prompt_path.read_text(encoding="utf-8")
         payload = {
             "test_name": test_name,
             "statistic": result.get("statistic"),
@@ -89,30 +77,25 @@ async def _get_gemini_explanation(test_name: str, result: dict) -> str | None:
             "interpretation": result.get("interpretation"),
             "assumption_checks": result.get("assumption_checks"),
         }
-        prompt = prompt_template.replace(
-            "{{TEST_RESULT}}", json.dumps(payload, indent=2)
+        prompt = render_prompt(
+            "stats_explain.txt",
+            TEST_RESULT=json.dumps(payload, indent=2, default=str),
         )
+        if prompt is None:
+            return None
 
-        client = google_genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=prompt,
-        )
-        raw = response.text.strip()
-        if raw.startswith("```"):
-            raw = re.sub(r"^```[a-z]*\n?", "", raw)
-            raw = re.sub(r"\n?```$", "", raw)
+        parsed = await generate_json(prompt)
+        if not parsed:
+            return None
 
-        parsed = json.loads(raw)
         explanation = parsed.get("plain_english", "")
-        if explanation and len(explanation) > 10:
-            return explanation
+        if isinstance(explanation, str) and len(explanation) > 10:
+            return explanation.strip()
 
     except Exception as e:
         logger.warning(f"Gemini stats explanation failed for {test_name}: {e}")
 
     return None
-
 
 def _rule_based_explanation(test_name: str, result: dict) -> str:
     p = result.get("p_value", 1.0)

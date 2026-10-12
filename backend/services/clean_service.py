@@ -22,7 +22,8 @@ For each issue:
 Gemini adds a plain English "why" explanation to every recommendation.
 Fallback: rule-based explanation if Gemini is unavailable.
 """
-
+import json
+from core.gemini_client import generate_json, render_prompt
 import json
 import logging
 import re
@@ -38,52 +39,37 @@ from core.exceptions import ColumnNotFoundError
 logger = logging.getLogger(__name__)
 
 # Gemini explanation helper
-
 async def _get_gemini_explanation(issue_type: str, column: str, strategy: str, stats: dict) -> str | None:
     """
     Ask Gemini to explain why this strategy is recommended for this issue.
     Returns a plain English string or None on failure.
     """
     try:
-        from google import genai as google_genai
-
-        api_key = settings.GEMINI_API_KEY
-        if not api_key:
-            return None
-
-        prompt_path = Path("prompts/clean_recommend.txt")
-        if not prompt_path.exists():
-            return None
-
-        prompt_template = prompt_path.read_text(encoding="utf-8")
         payload = {
             "issue_type": issue_type,
             "column": column,
             "strategy": strategy,
             "stats": stats,
         }
-        prompt = prompt_template.replace("{{ISSUE_PAYLOAD}}", json.dumps(payload, indent=2))
-
-        client = google_genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=prompt,
+        prompt = render_prompt(
+            "clean_recommend.txt",
+            ISSUE_PAYLOAD=json.dumps(payload, indent=2, default=str),
         )
-        raw = response.text.strip()
-        if raw.startswith("```"):
-            raw = re.sub(r"^```[a-z]*\n?", "", raw)
-            raw = re.sub(r"\n?```$", "", raw)
+        if prompt is None:
+            return None
 
-        parsed = json.loads(raw)
+        parsed = await generate_json(prompt)
+        if not parsed:
+            return None
+
         explanation = parsed.get("explanation", "")
-        if explanation and len(explanation) > 10:
-            return explanation
+        if isinstance(explanation, str) and len(explanation) > 10:
+            return explanation.strip()
 
     except Exception as e:
         logger.warning(f"Gemini explanation failed for {issue_type}/{column}: {e}")
 
     return None
-
 
 def _rule_based_explanation(issue_type: str, column: str, strategy: str, stats: dict) -> str:
     """Fallback plain English explanation when Gemini is unavailable."""
