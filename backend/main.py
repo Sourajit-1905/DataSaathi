@@ -1,72 +1,42 @@
 """
-Initializes the FastAPI application, registers all routers,
-configures CORS, registers exception handlers, and mounts health check.
+DataSaathi — Backend Entry Point
+=================================
+Creates the FastAPI application, wires middleware, error handling and routers,
+and exposes the health check.
+
+Run with ONE worker. The profile, EDA, stats, NLP and ML results are cached in
+process memory, so several uvicorn workers would not see each other's data.
 """
 
+import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.exceptions import HTTPException
 
 from core.config import settings
+from core.exceptions import register_exception_handlers
+from core.gemini_client import gemini_status
 from core.logging_config import setup_logging
-from core.exceptions import (
-    SessionNotFoundError,
-    InvalidFileTypeError,
-    FileTooLargeError,
-    ColumnNotFoundError,
-    InvalidFormulaError,
-    ProfileNotRunError,
-    SnapshotNotFoundError,
-    http_exception_handler,
-    session_not_found_handler,
-    invalid_file_type_handler,
-    file_too_large_handler,
-    column_not_found_handler,
-    invalid_formula_handler,
-    profile_not_run_handler,
-    snapshot_not_found_handler,
-    generic_exception_handler,
-)
+from core.middleware import NaNSafeJSONResponse, RequestContextMiddleware
 
-from fastapi.responses import JSONResponse
-import math
-import json
-
-class NaNSafeJSONResponse(JSONResponse):
-    def render(self, content) -> bytes:
-        return json.dumps(
-            content,
-            ensure_ascii=False,
-            allow_nan=False,
-            indent=None,
-            separators=(",", ":"),
-        ).encode("utf-8")
-
-    @staticmethod
-    def _replace_nan(obj):
-        if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
-            return None
-        elif isinstance(obj, dict):
-            return {k: NaNSafeJSONResponse._replace_nan(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [NaNSafeJSONResponse._replace_nan(v) for v in obj]
-        return obj
-
-    def render(self, content) -> bytes:
-        clean = NaNSafeJSONResponse._replace_nan(content)
-        return json.dumps(clean, ensure_ascii=False).encode("utf-8")
 #  Routers 
 from routers import dataset, profile, clean, transform, eda, stats, nlp, ml, report, ai
 
 #  Logging 
 setup_logging()
+logger = logging.getLogger(__name__)
+
+
+def _cors_origins() -> list[str]:
+    """CORS_ORIGIN may hold one origin or several, separated by commas."""
+    return [o.strip() for o in settings.CORS_ORIGIN.split(",") if o.strip()]
 
 
 #  Lifespan 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Ensure upload directories exist on startup."""
+    """Create the upload directories and report the AI configuration."""
     for path in [
         settings.original_path,
         settings.working_path,
@@ -75,6 +45,18 @@ async def lifespan(app: FastAPI):
         settings.reports_path,
     ]:
         path.mkdir(parents=True, exist_ok=True)
+
+    status = gemini_status()
+    if status["configured"] and not status["sdk_installed"]:
+        logger.warning(
+            "GEMINI_API_KEY is set but the google-genai package is not installed. "
+            "Run: pip install google-genai"
+        )
+    elif status["configured"]:
+        logger.info("Gemini enabled (model=%s)", status["model"])
+    else:
+        logger.info("Gemini is not configured; AI features will use rule-based answers.")
+
     yield
 
 
@@ -90,25 +72,21 @@ app = FastAPI(
     default_response_class=NaNSafeJSONResponse,
 )
 
-#  CORS 
+#  Middleware 
+# The last middleware added is the outermost. CORS must wrap the request
+# context so that every response, including error responses, carries CORS headers.
+app.add_middleware(RequestContextMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.CORS_ORIGIN],
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID", "Content-Disposition"],
 )
 
-#  Exception Handlers 
-app.add_exception_handler(HTTPException, http_exception_handler)
-app.add_exception_handler(SessionNotFoundError, session_not_found_handler)
-app.add_exception_handler(InvalidFileTypeError, invalid_file_type_handler)
-app.add_exception_handler(FileTooLargeError, file_too_large_handler)
-app.add_exception_handler(ColumnNotFoundError, column_not_found_handler)
-app.add_exception_handler(InvalidFormulaError, invalid_formula_handler)
-app.add_exception_handler(ProfileNotRunError, profile_not_run_handler)
-app.add_exception_handler(SnapshotNotFoundError, snapshot_not_found_handler)
-app.add_exception_handler(Exception, generic_exception_handler)
+#  Error handling 
+register_exception_handlers(app)
 
 #  Routers 
 app.include_router(dataset.router)
@@ -128,5 +106,3 @@ app.include_router(ai.router)
 def health_check():
     """Simple liveness check."""
     return {"status": "ok", "version": "1.0.0"}
-
-
