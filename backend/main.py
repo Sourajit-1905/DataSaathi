@@ -106,3 +106,7 @@ app.include_router(ai.router)
 def health_check():
     """Simple liveness check."""
     return {"status": "ok", "version": "1.0.0"}
+
+
+
+
