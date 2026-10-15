@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.0-flash"
     GEMINI_MAX_RETRIES: int = 3
 
+
+    SESSION_TTL_HOURS: int = 24
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

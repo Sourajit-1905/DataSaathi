@@ -74,3 +74,12 @@ def set_ml_result(session_id: str, result: dict) -> None:
 
 def get_ml_result(session_id: str) -> dict | None:
     return _ml_history.get(session_id)
+
+def clear_session(session_id: str) -> None:
+    """Forget everything cached for a session: profile, EDA, stats, NLP and ML results."""
+    _profile_cache.pop(session_id, None)
+    _eda_history.pop(session_id, None)
+    _stats_history.pop(session_id, None)
+    _nlp_history.pop(session_id, None)
+    _ml_history.pop(session_id, None)
+

@@ -19,14 +19,27 @@ from core.exceptions import register_exception_handlers
 from core.gemini_client import gemini_status
 from core.logging_config import setup_logging
 from core.middleware import NaNSafeJSONResponse, RequestContextMiddleware
-
+import asyncio
+import contextlib
 #  Routers 
 from routers import dataset, profile, clean, transform, eda, stats, nlp, ml, report, ai
-
+from services import session_service
 #  Logging 
 setup_logging()
 logger = logging.getLogger(__name__)
 
+
+CLEANUP_INTERVAL_SECONDS = 3600
+
+
+async def _cleanup_loop(ttl_hours: float) -> None:
+    """Delete idle sessions once at startup, then every hour."""
+    while True:
+        try:
+            await asyncio.to_thread(session_service.cleanup_expired_sessions, ttl_hours)
+        except Exception:
+            logger.exception("Session cleanup failed")
+        await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
 
 def _cors_origins() -> list[str]:
     """CORS_ORIGIN may hold one origin or several, separated by commas."""
@@ -57,8 +70,21 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Gemini is not configured; AI features will use rule-based answers.")
 
-    yield
+    ttl_hours = getattr(settings, "SESSION_TTL_HOURS", 24)
+    cleanup_task = None
+    if ttl_hours and ttl_hours > 0:
+        cleanup_task = asyncio.create_task(_cleanup_loop(ttl_hours))
+        logger.info("Session cleanup enabled (idle sessions are deleted after %s hours)", ttl_hours)
+    else:
+        logger.info("Session cleanup disabled")
 
+    try:
+        yield
+    finally:
+        if cleanup_task:
+            cleanup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await cleanup_task
 
 #  App 
 app = FastAPI(
