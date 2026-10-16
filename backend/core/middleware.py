@@ -22,12 +22,11 @@ import math
 import re
 import time
 import uuid
-
+from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
-
-from core.exceptions import generic_exception_handler
+from core.exceptions import error_response, generic_exception_handler
 
 logger = logging.getLogger(__name__)
 
@@ -120,3 +119,67 @@ class NaNSafeJSONResponse(JSONResponse):
             allow_nan=False,
             separators=(",", ":"),
         ).encode("utf-8")
+    
+class BodyLimitMiddleware:
+    """
+    Reject oversized request bodies before they are parsed.
+
+    FastAPI receives and spools a whole multipart upload to a temporary file
+    before the endpoint runs, so checking the size inside the endpoint cannot
+    stop an enormous upload from filling the disk first. This runs earlier:
+
+      - if Content-Length already exceeds the limit, answer 413 without reading
+        the body at all;
+      - otherwise count the bytes as they arrive and raise a 413 the moment the
+        limit is crossed (this also covers chunked uploads with no Content-Length).
+
+    The upload path gets its own, larger limit; everything else is small JSON.
+    """
+
+    def __init__(self, app, default_limit: int, upload_path: str, upload_limit: int, upload_message: str):
+        self.app = app
+        self.default_limit = default_limit
+        self.upload_path = upload_path
+        self.upload_limit = upload_limit
+        self.upload_message = upload_message
+
+    @staticmethod
+    def _declared_length(scope) -> int | None:
+        for key, value in scope.get("headers", []):
+            if key == b"content-length":
+                try:
+                    return int(value)
+                except ValueError:
+                    return None
+        return None
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("method") in ("GET", "HEAD", "OPTIONS"):
+            await self.app(scope, receive, send)
+            return
+
+        if scope.get("path") == self.upload_path:
+            limit, message = self.upload_limit, self.upload_message
+        else:
+            limit = self.default_limit
+            message = f"The request is too large. The maximum size is {limit // (1024 * 1024)} MB."
+
+        declared = self._declared_length(scope)
+        if declared is not None and declared > limit:
+            response = error_response(Request(scope, receive), 413, message)
+            await response(scope, receive, send)
+            return
+
+        received = 0
+
+        async def counting_receive():
+            nonlocal received
+            event = await receive()
+            if event["type"] == "http.request":
+                received += len(event.get("body", b""))
+                if received > limit:
+                    raise HTTPException(status_code=413, detail=message)
+            return event
+
+        await self.app(scope, counting_receive, send)
+

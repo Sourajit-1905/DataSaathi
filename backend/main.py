@@ -18,9 +18,11 @@ from core.config import settings
 from core.exceptions import register_exception_handlers
 from core.gemini_client import gemini_status
 from core.logging_config import setup_logging
-from core.middleware import NaNSafeJSONResponse, RequestContextMiddleware
 import asyncio
 import contextlib
+
+from core.middleware import BodyLimitMiddleware, NaNSafeJSONResponse, RequestContextMiddleware
+
 #  Routers 
 from routers import dataset, profile, clean, transform, eda, stats, nlp, ml, report, ai
 from services import session_service
@@ -101,7 +103,16 @@ app = FastAPI(
 #  Middleware 
 # The last middleware added is the outermost. CORS must wrap the request
 # context so that every response, including error responses, carries CORS headers.
+
+app.add_middleware(
+    BodyLimitMiddleware,
+    default_limit=2 * 1024 * 1024,
+    upload_path="/api/dataset/upload",
+    upload_limit=settings.max_upload_bytes + 1024 * 1024,   # room for multipart framing
+    upload_message=f"The file is too large. The maximum upload size is {settings.MAX_UPLOAD_MB} MB.",
+)
 app.add_middleware(RequestContextMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
