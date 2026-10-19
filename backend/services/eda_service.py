@@ -672,6 +672,7 @@ def multivariate_analysis(df: DataFrame, columns: list[str] = None) -> dict:
     if columns:
         num_cols = [c for c in columns if c in df.columns and pd.api.types.is_numeric_dtype(df[c])]
 
+    available = len(num_cols)
     num_cols = num_cols[:20]
 
     if len(num_cols) < 2:
@@ -728,6 +729,12 @@ def multivariate_analysis(df: DataFrame, columns: list[str] = None) -> dict:
     return {
         "columns_analysed": num_cols,
         "n_columns": len(num_cols),
+        "total_numeric_columns": available,
+        "columns_capped": available > len(num_cols),
+        "warning": (
+            f"Showing the first {len(num_cols)} of {available} numerical columns."
+            if available > len(num_cols) else None
+        ),
         "heatmap_data": heatmap_data,
         "strong_pairs": strong_pairs,
         "pairwise_summary": pairwise,

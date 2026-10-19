@@ -22,7 +22,7 @@ Guarantees
     read, compute and commit, so a double-clicked Apply cannot lose an update.
   - Housekeeping. Idle sessions are deleted by cleanup_expired_sessions().
 """
-
+import asyncio
 import json
 import logging
 import os
@@ -217,6 +217,10 @@ def get_working_df(session_id: str) -> pd.DataFrame:
             raise SessionNotFoundError(session_id)
         return pd.read_csv(path, low_memory=False)
 
+
+async def aget_working_df(session_id: str) -> pd.DataFrame:
+    """get_working_df for async endpoints: any wait for the session lock happens off the event loop."""
+    return await asyncio.to_thread(get_working_df, session_id)
 
 def save_working_df(session_id: str, df: pd.DataFrame) -> None:
     """Replace the working CSV. Prefer commit_change(), which also snapshots and logs."""

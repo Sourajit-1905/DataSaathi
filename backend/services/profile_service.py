@@ -10,7 +10,7 @@ Results are cached in core/cache.py after first run.
 Gemini is called at the end to rewrite P22 insights as a narrative.
 Fallback: if Gemini fails, rule-based templated insights are returned.
 """
-
+import asyncio
 import json
 from core.gemini_client import generate_json, render_prompt
 
@@ -793,13 +793,8 @@ async def _generate_gemini_insights(all_results: dict) -> list[str] | None:
 
     return None
 
-async def run_full_profile(df: pd.DataFrame) -> dict:
-    """
-    Run all 22 profiling checks and return a combined result dict.
-    Gemini is called at the end to generate narrative insights.
-    Falls back to rule-based insights if Gemini is unavailable.
-    """
-    # Collect all algorithmic results first
+def _compute_profile(df: pd.DataFrame) -> dict:
+    """All the profiling checks. CPU-heavy and synchronous, so it runs in a worker thread."""
     identifier_cols_raw = identifier_detection(df)
     identifier_col_names = [i["column"] for i in identifier_cols_raw]
 
@@ -822,7 +817,7 @@ async def run_full_profile(df: pd.DataFrame) -> dict:
         "categorical_imbalance": imbalance,
     })
 
-    all_results = {
+    return {
         "dimensions": get_dimensions(df),
         "column_identification": identify_columns(df),
         "numerical_columns": detect_numerical_columns(df),
@@ -848,6 +843,16 @@ async def run_full_profile(df: pd.DataFrame) -> dict:
         "quality_summary": quality,
     }
 
+
+async def run_full_profile(df: pd.DataFrame) -> dict:
+    """
+    Run all 22 profiling checks and return a combined result dict.
+    The checks run in a worker thread so a large dataset never freezes the server;
+    Gemini is then called for narrative insights, with a rule-based fallback.
+    """
+    all_results = await asyncio.to_thread(_compute_profile, df)
+
+    # P22: Try Gemini first, fall back to rule-based
     gemini_insights = await _generate_gemini_insights(all_results)
     all_results["insights"] = gemini_insights if gemini_insights else _generate_rule_based_insights(all_results)
     all_results["insights_source"] = "gemini" if gemini_insights else "rule_based"

@@ -68,7 +68,7 @@ VALID_ANALYSIS_TYPES = {
 #   POST /api/eda/{session_id}/analyze  
 
 @router.post("/{session_id}/analyze")
-async def analyze(session_id: str, body: AnalyzeRequest):
+def analyze(session_id: str, body: AnalyzeRequest):
     """
     Run a specific EDA analysis on the working dataset.
     Filters are applied in memory — working CSV is never modified.

@@ -433,16 +433,26 @@ def apply_interaction(df: pd.DataFrame, col_a: str, col_b: str) -> pd.DataFrame:
 
 def apply_formula(df: pd.DataFrame, formula: str, new_column: str) -> pd.DataFrame:
     from core.security import validate_formula
-    is_valid, error = validate_formula(formula, df.columns.tolist())
+
+    is_valid, reason = validate_formula(formula, df.columns.tolist())
     if not is_valid:
-        raise InvalidFormulaError(formula)
+        raise InvalidFormulaError(reason)
+
+    new_column = "derived" if new_column is None else str(new_column).strip()
+    if not 1 <= len(new_column) <= 100 or any(ord(ch) < 32 for ch in new_column):
+        raise InvalidFormulaError(
+            "The new column name must be 1 to 100 characters long, with no control characters."
+        )
+
     df = df.copy()
     try:
-        df[new_column] = df.eval(formula)
-    except Exception as e:
-        raise InvalidFormulaError(f"{formula} — eval error: {e}")
+        df[new_column] = df.eval(formula, local_dict={}, global_dict={})
+    except Exception:
+        raise InvalidFormulaError(
+            "The formula could not be evaluated. Check the column names, operators and brackets."
+        )
+    
     return df
-
 
 
 # 17  Lag Feature

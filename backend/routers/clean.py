@@ -5,7 +5,7 @@ from typing import Optional
 
 from core.security import validate_session_id
 from core.cache import invalidate_profile
-from core.exceptions import ColumnNotFoundError
+from core.exceptions import ColumnNotFoundError, SnapshotNotFoundError
 from services import session_service
 from services import clean_service
 
@@ -82,6 +82,42 @@ def _validate_issue_and_strategy(issue_type: str, strategy: str):
             detail=f"Strategy '{strategy}' is not valid for issue_type '{issue_type}'. "
                    f"Valid strategies: {VALID_STRATEGIES[issue_type]}",
         )
+
+
+
+# Every issue type except duplicates (which looks at whole rows) works on one column.
+COLUMN_REQUIRED = VALID_ISSUE_TYPES - {"duplicates"}
+
+
+def _require_column(issue_type: str, column: Optional[str], df) -> None:
+    """A column-based issue needs a column that exists in the current working data."""
+    if issue_type not in COLUMN_REQUIRED:
+        return
+    if not column:
+        raise HTTPException(status_code=400, detail=f"'column' is required for issue_type '{issue_type}'.")
+    if column not in df.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{column}' not found.")
+
+
+def _apply_strategy(df, body: "ApplyRequest"):
+    t = body.issue_type
+    if t == "missing_numerical":
+        return clean_service.apply_missing_numerical(df, body.column, body.strategy, body.fill_value)
+    if t == "missing_categorical":
+        return clean_service.apply_missing_categorical(df, body.column, body.strategy, body.fill_value_str)
+    if t == "duplicates":
+        return clean_service.apply_duplicates(df)
+    if t == "outliers":
+        return clean_service.apply_outliers(df, body.column, body.strategy)
+    if t == "type_conversion":
+        return clean_service.apply_type_conversion(df, body.column, body.strategy)
+    if t == "string_standardisation":
+        return clean_service.apply_string_standardisation(df, body.column, body.strategy)
+    if t in ("constant_columns", "identifier_columns"):
+        return clean_service.apply_drop_column(df, body.column)
+    if t == "negative_values":
+        return clean_service.apply_negative_values(df, body.column, body.strategy)
+    raise ValueError(f"Unhandled issue_type: {t}")
 
 
 # GET /api/clean/{session_id}/issues 
@@ -198,85 +234,57 @@ def preview(session_id: str, body: PreviewRequest):
 def apply(session_id: str, body: ApplyRequest):
     """
     Apply a cleaning strategy to the working dataset.
-    Snapshot taken before apply — enables single undo.
-    Profile cache invalidated after every apply.
+
+    The session is held from read to commit, so two quick clicks cannot lose an
+    update. Nothing is saved, snapshotted or logged unless the strategy succeeds,
+    so a failed apply leaves data, undo snapshot and history exactly as they were.
     """
     _check_session(session_id)
     _validate_issue_and_strategy(body.issue_type, body.strategy)
 
-    df = session_service.get_working_df(session_id)
-    rows_before = len(df)
-    cols_before = len(df.columns)
+    with session_service.session_lock(session_id):
+        df = session_service.get_working_df(session_id)
+        _require_column(body.issue_type, body.column, df)
+        rows_before, cols_before = len(df), len(df.columns)
 
-    # Take snapshot before mutating (enables undo)
-    session_service.take_snapshot(session_id)
+        try:
+            df_new = _apply_strategy(df, body)
+        except ColumnNotFoundError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception:
+            logger.exception("Clean apply failed | session_id=%s | %s/%s", session_id, body.issue_type, body.strategy)
+            raise HTTPException(status_code=500, detail="Apply operation failed.")
 
-    try:
-        if body.issue_type == "missing_numerical":
-            df = clean_service.apply_missing_numerical(
-                df, body.column, body.strategy, body.fill_value
-            )
-        elif body.issue_type == "missing_categorical":
-            df = clean_service.apply_missing_categorical(
-                df, body.column, body.strategy, body.fill_value_str
-            )
-        elif body.issue_type == "duplicates":
-            df = clean_service.apply_duplicates(df)
-        elif body.issue_type == "outliers":
-            df = clean_service.apply_outliers(df, body.column, body.strategy)
-        elif body.issue_type == "type_conversion":
-            df = clean_service.apply_type_conversion(df, body.column, body.strategy)
-        elif body.issue_type == "string_standardisation":
-            df = clean_service.apply_string_standardisation(df, body.column, body.strategy)
-        elif body.issue_type in ("constant_columns", "identifier_columns"):
-            df = clean_service.apply_drop_column(df, body.column)
-        elif body.issue_type == "negative_values":
-            df = clean_service.apply_negative_values(df, body.column, body.strategy)
+        session_service.commit_change(session_id, df_new, {
+            "stage": "clean",
+            "issue_type": body.issue_type,
+            "column": body.column,
+            "strategy": body.strategy,
+            "rows_before": rows_before,
+            "rows_after": len(df_new),
+            "cols_before": cols_before,
+            "cols_after": len(df_new.columns),
+        })
 
-    except ColumnNotFoundError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.exception(f"Apply failed for {body.issue_type}: {e}")
-        raise HTTPException(status_code=500, detail="Apply operation failed.")
-
-    # Save working df
-    session_service.save_working_df(session_id, df)
-
-    # Invalidate profile cache — data has changed
     invalidate_profile(session_id)
 
-    # Log operation
-    session_service.log_operation(session_id, {
-        "stage": "clean",
-        "issue_type": body.issue_type,
-        "column": body.column,
-        "strategy": body.strategy,
-        "rows_before": rows_before,
-        "rows_after": len(df),
-        "cols_before": cols_before,
-        "cols_after": len(df.columns),
-    })
-
     logger.info(
-        f"Clean applied | session_id={session_id} | "
-        f"issue={body.issue_type} | strategy={body.strategy} | "
-        f"rows {rows_before}→{len(df)} | cols {cols_before}→{len(df.columns)}"
+        "Clean applied | session_id=%s | issue=%s | strategy=%s | rows %d→%d | cols %d→%d",
+        session_id, body.issue_type, body.strategy,
+        rows_before, len(df_new), cols_before, len(df_new.columns),
     )
 
-    # Warn if set_nan created new missing values
     warning = None
-    if body.strategy == "set_nan" and body.column:
-        new_nulls = int(df[body.column].isna().sum()) if body.column in df.columns else 0
+    if body.strategy == "set_nan" and body.column in df_new.columns:
+        new_nulls = int(df_new[body.column].isna().sum())
         if new_nulls > 0:
             warning = (
                 f"'{body.column}' now has {new_nulls} missing values created by set_nan. "
                 f"Consider re-running missing value cleaning for this column."
             )
-
-    # Warn if flag_only added a new column
     if body.strategy == "flag_only" and body.column:
         flag_col = f"{body.column}_negative_flag"
-        if flag_col in df.columns and not warning:
+        if flag_col in df_new.columns and not warning:
             warning = (
                 f"A new column '{flag_col}' was added to flag negative values. "
                 f"Exclude it from ML features if not needed."
@@ -289,39 +297,34 @@ def apply(session_id: str, body: ApplyRequest):
         "strategy": body.strategy,
         "column": body.column,
         "rows_before": rows_before,
-        "rows_after": len(df),
+        "rows_after": len(df_new),
         "cols_before": cols_before,
-        "cols_after": len(df.columns),
+        "cols_after": len(df_new.columns),
         "warning": warning,
     }
 
 
-# POST /api/clean/{session_id}/undo 
-
 @router.post("/{session_id}/undo")
 def undo(session_id: str):
     """
-    Restore the working dataset from the last snapshot.
-    Single-level undo — only the most recent operation can be undone.
-    Profile cache invalidated after undo.
+    Undo the last change. Single level: the snapshot is consumed, so a second
+    undo returns 404 until another change is applied.
     """
     _check_session(session_id)
 
     try:
         session_service.restore_snapshot(session_id)
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except SnapshotNotFoundError:
+        raise HTTPException(status_code=404, detail="There is nothing to undo.")
 
     invalidate_profile(session_id)
-
-    logger.info(f"Undo applied | session_id={session_id}")
+    logger.info("Undo applied | session_id=%s", session_id)
 
     return {
         "session_id": session_id,
         "status": "undone",
-        "message": "Last cleaning operation has been reversed.",
+        "message": "The last change has been reversed.",
     }
-
 
 # GET /api/clean/{session_id}/history 
 

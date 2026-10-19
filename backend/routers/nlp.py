@@ -18,6 +18,9 @@ from core.security import validate_session_id
 from core.cache import append_nlp_history, get_nlp_history
 from services import session_service
 from services import nlp_service
+from fastapi.concurrency import run_in_threadpool
+
+
 
 router = APIRouter(prefix="/api/nlp", tags=["nlp"])
 logger = logging.getLogger(__name__)
@@ -64,10 +67,10 @@ VALID_ANALYSES = {
 #  GET /api/nlp/{session_id}/detect-columns 
 
 @router.get("/{session_id}/detect-columns")
-def detect_columns(session_id: str):
+async def detect_columns(session_id: str):
     """Detect which columns contain free-form text."""
     _check_session(session_id)
-    df = session_service.get_working_df(session_id)
+    df = await session_service.get_working_df(session_id)
     columns = nlp_service.detect_text_columns(df)
     return {
         "session_id": session_id,
@@ -79,7 +82,7 @@ def detect_columns(session_id: str):
 #  POST /api/nlp/{session_id}/run 
 
 @router.post("/{session_id}/run")
-def run_analysis(session_id: str, body: RunRequest):
+async def run_analysis(session_id: str, body: RunRequest):
     """
     Run a single NLP analysis on a text column.
     Heavy analyses (embeddings, clustering) sample to 2000 rows.
@@ -93,7 +96,7 @@ def run_analysis(session_id: str, body: RunRequest):
                    f"Valid types: {sorted(VALID_ANALYSES)}",
         )
 
-    df = session_service.get_working_df(session_id)
+    df = await session_service.get_working_df(session_id)
     _check_column(df, body.column)
 
     opts = body.options or {}
@@ -174,25 +177,27 @@ def run_analysis(session_id: str, body: RunRequest):
 
     logger.info(f"NLP run | session_id={session_id} | type={t} | col={col}")
 
+    warning = nlp_service.sampling_warning(t, len(df))
     return {
         "session_id": session_id,
         "analysis_type": t,
         "column": col,
         "result": result,
+        "warnings": [warning] if warning else [],
     }
 
 
 #  POST /api/nlp/{session_id}/question 
 
 @router.post("/{session_id}/question")
-def similarity_question(session_id: str, body: QuestionRequest):
+async def similarity_question(session_id: str, body: QuestionRequest):
     """Find the records most semantically similar to a query."""
     _check_session(session_id)
 
     if not body.query or len(body.query.strip()) < 2:
         raise HTTPException(status_code=400, detail="Query is too short.")
 
-    df = session_service.get_working_df(session_id)
+    df = await session_service.get_working_df(session_id)
     _check_column(df, body.column)
 
     results = nlp_service.semantic_similarity_search(
@@ -208,28 +213,35 @@ def similarity_question(session_id: str, body: QuestionRequest):
         "query": body.query,
     })
 
+    warning = nlp_service.sampling_warning("similarity_search", len(df))
     return {
         "session_id": session_id,
         "query": body.query,
         "column": body.column,
         "results": results,
+        "warnings": [warning] if warning else [],
     }
 
 
 #  GET /api/nlp/{session_id}/insights 
-
 @router.get("/{session_id}/insights")
 async def get_insights(session_id: str, column: str):
     """Generate NLP insights (Gemini narrative or rule-based fallback)."""
     _check_session(session_id)
 
-    df = session_service.get_working_df(session_id)
+    df = await session_service.aget_working_df(session_id)
     _check_column(df, column)
 
-    sentiment = nlp_service.sentiment_aggregation(df, column)
-    keywords = nlp_service.tfidf_keywords(df, column, 10)
-    topics = nlp_service.lda_topics(df, column, 3)
-    quality = nlp_service.text_quality_assessment(df, column)
+    def analyse():
+        # Sentiment, TF-IDF and topic modelling are CPU-heavy: keep them off the event loop.
+        return (
+            nlp_service.sentiment_aggregation(df, column),
+            nlp_service.tfidf_keywords(df, column, 10),
+            nlp_service.lda_topics(df, column, 3),
+            nlp_service.text_quality_assessment(df, column),
+        )
+
+    sentiment, keywords, topics, quality = await run_in_threadpool(analyse)
 
     # Drop error placeholders so downstream helpers get clean inputs
     if keywords and "error" in keywords[0]:
@@ -245,14 +257,15 @@ async def get_insights(session_id: str, column: str):
         logger.exception(f"NLP insights failed: {e}")
         raise HTTPException(status_code=500, detail="Insight generation failed.")
 
+    warning = nlp_service.sampling_warning("topics", len(df))
     return {
         "session_id": session_id,
         "column": column,
         "insights": result["insights"],
         "source": result["source"],
         "count": len(result["insights"]),
+        "warnings": [warning] if warning else [],
     }
-
 
 #  GET /api/nlp/{session_id}/history 
 

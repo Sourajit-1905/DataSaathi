@@ -57,7 +57,7 @@ logger = logging.getLogger(__name__)
 
 # Sampling cap for embedding operations
 EMBEDDING_SAMPLE_CAP = 2000
-
+LDA_SAMPLE_CAP = 5000
 
 # Lazy imports — heavy libraries loaded only when needed
 
@@ -436,6 +436,13 @@ def extract_ngrams(
 
 
 # 11  LDA Topic Modelling
+def _lda_corpus(df: pd.DataFrame, column: str) -> pd.Series:
+    """Text of a column for topic modelling, randomly sampled when it is very large."""
+    s = df[column].fillna("").astype(str)
+    if len(s) > LDA_SAMPLE_CAP:
+        s = s.sample(LDA_SAMPLE_CAP, random_state=42)
+    return s
+
 
 def lda_topics(
     df: pd.DataFrame, column: str, n_topics: int = 5, top_words: int = 8
@@ -448,7 +455,7 @@ def lda_topics(
         from sklearn.feature_extraction.text import CountVectorizer
         from sklearn.decomposition import LatentDirichletAllocation
 
-        corpus = df[column].fillna("").astype(str).tolist()
+        corpus = _lda_corpus(df, column).tolist()
         vectorizer = CountVectorizer(
             max_features=300,
             stop_words="english",
@@ -489,6 +496,61 @@ def lda_topics(
         logger.warning(f"LDA failed: {e}")
         return [{"error": str(e)}]
 
+
+def document_topic_assignment(
+    df: pd.DataFrame, column: str, n_topics: int = 5
+) -> list[dict]:
+    """Assign each document to its dominant topic. `index` is the row's index in the dataset."""
+    if column not in df.columns:
+        return [{"error": f"Column '{column}' not found."}]
+
+    try:
+        from sklearn.feature_extraction.text import CountVectorizer
+        from sklearn.decomposition import LatentDirichletAllocation
+
+        sampled = _lda_corpus(df, column)
+        corpus = sampled.tolist()
+        vectorizer = CountVectorizer(
+            max_features=300, stop_words="english", min_df=2
+        )
+        dtm = vectorizer.fit_transform(corpus)
+        lda = LatentDirichletAllocation(
+            n_components=n_topics, random_state=42, max_iter=10
+        )
+        doc_topic = lda.fit_transform(dtm)
+
+        return [
+            {
+                "index": int(sampled.index[i]),
+                "dominant_topic": int(doc_topic[i].argmax()),
+                "topic_score": round(float(doc_topic[i].max()), 4),
+                "text_preview": corpus[i][:80],
+            }
+            for i in range(len(corpus))
+        ]
+
+    except Exception as e:
+        return [{"error": str(e)}]
+
+
+# Row cap for each analysis that works on a sample (see EMBEDDING_SAMPLE_CAP and LDA_SAMPLE_CAP).
+SAMPLED_ANALYSES = {
+    "topics": LDA_SAMPLE_CAP,
+    "document_topics": LDA_SAMPLE_CAP,
+    "clusters": EMBEDDING_SAMPLE_CAP,
+    "cluster_keywords": EMBEDDING_SAMPLE_CAP,
+    "cluster_sizes": EMBEDDING_SAMPLE_CAP,
+    "similarity_search": EMBEDDING_SAMPLE_CAP,
+    "similar_pairs": 200,
+}
+
+
+def sampling_warning(analysis_type: str, n_rows: int) -> str | None:
+    """A sentence for the UI when an analysis used a sample instead of every row, else None."""
+    cap = SAMPLED_ANALYSES.get(analysis_type)
+    if cap and n_rows > cap:
+        return f"This analysis used a random sample of {cap:,} of your {n_rows:,} rows to keep it fast."
+    return None
 
 # 12  Topic-Keyword Mapping
 
