@@ -7,6 +7,9 @@ import pytest
 import pandas as pd
 from fastapi.testclient import TestClient
 
+
+import os
+os.environ.setdefault("SESSION_TTL_HOURS", "0")
 from main import app
 
 
