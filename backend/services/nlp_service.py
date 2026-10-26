@@ -570,41 +570,6 @@ def topic_keyword_map(
 
 # N3  Document-Topic Assignment
 
-def document_topic_assignment(
-    df: pd.DataFrame, column: str, n_topics: int = 5
-) -> list[dict]:
-    """Assign each document to its dominant topic."""
-    if column not in df.columns:
-        return [{"error": f"Column '{column}' not found."}]
-
-    try:
-        from sklearn.feature_extraction.text import CountVectorizer
-        from sklearn.decomposition import LatentDirichletAllocation
-
-        corpus = df[column].fillna("").astype(str).tolist()
-        vectorizer = CountVectorizer(
-            max_features=300, stop_words="english", min_df=2
-        )
-        dtm = vectorizer.fit_transform(corpus)
-        lda = LatentDirichletAllocation(
-            n_components=n_topics, random_state=42, max_iter=10
-        )
-        doc_topic = lda.fit_transform(dtm)
-
-        return [
-            {
-                "index": int(i),
-                "dominant_topic": int(doc_topic[i].argmax()),
-                "topic_score": round(float(doc_topic[i].max()), 4),
-                "text_preview": corpus[i][:80],
-            }
-            for i in range(len(corpus))
-        ]
-
-    except Exception as e:
-        return [{"error": str(e)}]
-
-
 #   14  Sentence Embeddings (sampled)
 
 def get_embeddings(
