@@ -57,9 +57,7 @@ GOOGLE_KEY = "AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q"
 ORIGIN = {"Origin": "http://localhost:5173"}
 
 
-# ═══════════════════════════════════════════════════════════════
 # A. Error handling and middleware
-# ═══════════════════════════════════════════════════════════════
 
 class _Body(BaseModel):
     column: str
@@ -261,9 +259,7 @@ def test_one_log_line_per_request_and_no_log_forging(tc, caplog):
     assert all("\n" not in message for _, message in lines)
 
 
-# ═══════════════════════════════════════════════════════════════
 # B. Request body limits
-# ═══════════════════════════════════════════════════════════════
 
 def test_small_upload_is_accepted(tc):
     r = tc.post("/upload", files={"file": ("a.csv", b"a,b\n1,2\n", "text/csv")})
@@ -338,9 +334,7 @@ async def test_a_chunked_upload_is_stopped_part_way(toy_app):
     assert sent["bytes"] < 3 * MB          # it did not read all 50 MB
 
 
-# ═══════════════════════════════════════════════════════════════
 # C. Logging redaction
-# ═══════════════════════════════════════════════════════════════
 
 def _capture_logger(name: str):
     buf = io.StringIO()
@@ -415,9 +409,7 @@ def test_log_level_names(name, level, valid):
     assert _resolve_level(name) == (level, valid)
 
 
-# ═══════════════════════════════════════════════════════════════
 # D. Gemini client (the SDK call is faked)
-# ═══════════════════════════════════════════════════════════════
 
 class Boom(Exception):
     def __init__(self, code, message="boom"):
@@ -608,9 +600,7 @@ def test_the_status_never_includes_the_key(gemini):
     assert "kkkk" not in str(status)
 
 
-# ═══════════════════════════════════════════════════════════════
 # E. Session service
-# ═══════════════════════════════════════════════════════════════
 
 @pytest.fixture
 def uploads(tmp_path, monkeypatch):
@@ -915,9 +905,7 @@ async def test_the_cleanup_loop_runs_and_survives_a_failure(monkeypatch):
     assert len(calls) >= 2 and set(calls) == {24}          # it kept going after the first failure
 
 
-# ═══════════════════════════════════════════════════════════════
 # F. The event loop is never blocked
-# ═══════════════════════════════════════════════════════════════
 
 async def measure(app, request_fn):
     """
@@ -1017,9 +1005,7 @@ async def test_a_blocking_read_would_have_frozen_the_loop(uploads):
     assert loop_is_blocked(ticks, total, health_after), (ticks, total, health_after)
 
 
-# ═══════════════════════════════════════════════════════════════
 # G. Unit tests for the patched code
-# ═══════════════════════════════════════════════════════════════
 
 def _corpus(n):
     pool = [
@@ -1111,7 +1097,7 @@ FORMULA_FRAME = pd.DataFrame({
 
 @pytest.mark.parametrize("formula", [
     "abs(Age - 30)", "sqrt(price)", "log(price)", "log10(price)", "log1p(price)", "exp(Age / 100)",
-    "sin(Age)", "cos(Age)", "tan(Age)", "floor(price / 3)", "ceil(price / 3)",
+    "sin(Age)", "cos(Age)", "floor(price / 3)", "ceil(price / 3)",
     "`Total Sales` * 2", "Open - Close", "Age > 30 and price < 20", "not (Age > 30)", "Age ** 2",
 ])
 def test_every_formula_the_validator_allows_really_evaluates(formula):
@@ -1162,9 +1148,7 @@ def test_an_evaluation_failure_does_not_leak_internals():
     assert "Traceback" not in str(caught.value) and "pandas" not in str(caught.value).lower()
 
 
-# ═══════════════════════════════════════════════════════════════
 # H. Upload endpoint (real dataset router, real application)
-# ═══════════════════════════════════════════════════════════════
 
 @pytest.fixture(scope="module")
 def api(tmp_path_factory):
@@ -1376,9 +1360,7 @@ async def test_a_slow_upload_does_not_block_the_event_loop(api, monkeypatch):
     assert loop_is_free(ticks, total, health_after), (ticks, total, health_after)
 
 
-# ═══════════════════════════════════════════════════════════════
 # I. Project integration (real clean, transform, EDA, profile and report routers)
-# ═══════════════════════════════════════════════════════════════
 
 NUMBERS = pd.DataFrame({
     "Age": [25, None, 35, None, 45],
@@ -1544,9 +1526,7 @@ class TestProjectIntegration:
         assert loop_is_free(ticks, total, health_after), (ticks, total, health_after)
 
 
-# ═══════════════════════════════════════════════════════════════
 # J. Gemini call sites: the nine replaced helpers
-# ═══════════════════════════════════════════════════════════════
 
 def _eda_frame():
     return pd.DataFrame({"A": [1.0, 2.0, 3.0, 4.0], "B": ["x", "y", "x", "z"]})

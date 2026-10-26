@@ -67,10 +67,10 @@ VALID_ANALYSES = {
 #  GET /api/nlp/{session_id}/detect-columns 
 
 @router.get("/{session_id}/detect-columns")
-async def detect_columns(session_id: str):
+def detect_columns(session_id: str):
     """Detect which columns contain free-form text."""
     _check_session(session_id)
-    df = await session_service.get_working_df(session_id)
+    df =  session_service.get_working_df(session_id)
     columns = nlp_service.detect_text_columns(df)
     return {
         "session_id": session_id,
@@ -82,7 +82,7 @@ async def detect_columns(session_id: str):
 #  POST /api/nlp/{session_id}/run 
 
 @router.post("/{session_id}/run")
-async def run_analysis(session_id: str, body: RunRequest):
+def run_analysis(session_id: str, body: RunRequest):
     """
     Run a single NLP analysis on a text column.
     Heavy analyses (embeddings, clustering) sample to 2000 rows.
@@ -96,7 +96,7 @@ async def run_analysis(session_id: str, body: RunRequest):
                    f"Valid types: {sorted(VALID_ANALYSES)}",
         )
 
-    df = await session_service.get_working_df(session_id)
+    df = session_service.get_working_df(session_id)
     _check_column(df, body.column)
 
     opts = body.options or {}
@@ -190,14 +190,14 @@ async def run_analysis(session_id: str, body: RunRequest):
 #  POST /api/nlp/{session_id}/question 
 
 @router.post("/{session_id}/question")
-async def similarity_question(session_id: str, body: QuestionRequest):
+def similarity_question(session_id: str, body: QuestionRequest):
     """Find the records most semantically similar to a query."""
     _check_session(session_id)
 
     if not body.query or len(body.query.strip()) < 2:
         raise HTTPException(status_code=400, detail="Query is too short.")
 
-    df = await session_service.get_working_df(session_id)
+    df = session_service.get_working_df(session_id)
     _check_column(df, body.column)
 
     results = nlp_service.semantic_similarity_search(

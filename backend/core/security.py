@@ -202,8 +202,9 @@ MAX_POWER_OPERATORS = 5
 MAX_EXPONENT = 10
 
 ALLOWED_FORMULA_FUNCTIONS = frozenset({
-    "abs", "sqrt", "log", "log10", "log1p", "exp", "sin", "cos", "tan", "floor", "ceil",
+    "abs", "sqrt", "log", "log10", "log1p", "exp", "sin", "cos", "floor", "ceil",
 })
+
 ALLOWED_FORMULA_KEYWORDS = frozenset({"and", "or", "not"})
 
 # Used only to give a clearer message; anything that is not a column, a keyword
