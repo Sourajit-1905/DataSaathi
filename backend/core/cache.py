@@ -21,6 +21,11 @@ _nlp_history: dict[str, list] = {}
 # ML history cache: { session_id: dict }
 _ml_history: dict[str, dict] = {}
 
+# AI assistant: cached insight cards, and recent chat times (for rate limiting)
+_ai_insights: dict[str, dict] = {}
+_ai_chat_times: dict[str, list] = {}
+
+
 
 # Profile cache helpers 
 
@@ -75,11 +80,25 @@ def set_ml_result(session_id: str, result: dict) -> None:
 def get_ml_result(session_id: str) -> dict | None:
     return _ml_history.get(session_id)
 
+def get_ai_insights(session_id: str) -> dict | None:
+    return _ai_insights.get(session_id)
+
+
+def set_ai_insights(session_id: str, value: dict) -> None:
+    _ai_insights[session_id] = value
+
+
+def get_chat_times(session_id: str) -> list:
+    """Timestamps of this session's recent chat messages. The list is mutable by design."""
+    return _ai_chat_times.setdefault(session_id, [])
+
+
 def clear_session(session_id: str) -> None:
-    """Forget everything cached for a session: profile, EDA, stats, NLP and ML results."""
+    """Forget everything cached for a session: profile, EDA, stats, NLP and ML results, and AI state."""
     _profile_cache.pop(session_id, None)
     _eda_history.pop(session_id, None)
     _stats_history.pop(session_id, None)
     _nlp_history.pop(session_id, None)
     _ml_history.pop(session_id, None)
-
+    _ai_insights.pop(session_id, None)
+    _ai_chat_times.pop(session_id, None)

@@ -104,20 +104,21 @@ def _report_paths(session_id: str) -> list[Path]:
     sid = _check_id(session_id)
     return [settings.reports_path / f"{sid}_report.html", settings.reports_path / f"{sid}_report.pdf"]
 
+def _chat_path(session_id: str) -> Path:
+    return settings.chat_path / f"{_check_id(session_id)}_chat.json"
+
 
 def _session_dirs() -> list[Path]:
     return [
         settings.original_path, settings.working_path, settings.history_path,
-        settings.snapshots_path, settings.reports_path,
+        settings.snapshots_path, settings.reports_path, settings.chat_path,
     ]
-
 
 def _all_session_files(session_id: str) -> list[Path]:
     return [
         _original_path(session_id), _working_path(session_id), _history_path(session_id),
-        _snapshot_path(session_id), *_report_paths(session_id),
+        _snapshot_path(session_id), *_report_paths(session_id), _chat_path(session_id),
     ]
-
 
 def _ensure_dirs():
     for path in _session_dirs():
@@ -347,15 +348,53 @@ def reset_to_original(session_id: str) -> None:
         _unlink(_snapshot_path(session_id))
         for report in _report_paths(session_id):
             _unlink(report)
+        _unlink(_chat_path(session_id))
         cache.clear_session(session_id)
 
     logger.info("Session reset to original | session_id=%s", session_id)
 
 
 # Expiry
+#   Chat (the AI assistant's conversation)  
+
+def get_chat(session_id: str) -> list[dict]:
+    """The stored conversation, oldest first. A missing or corrupt file reads as empty."""
+    with session_lock(session_id):
+        path = _chat_path(session_id)
+        if not path.exists():
+            return []
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            logger.warning("Chat file corrupted for session_id=%s, ignoring it.", session_id)
+            return []
+        return data if isinstance(data, list) else []
+
+
+def append_chat(session_id: str, messages: list[dict], max_messages: int = 200) -> list[dict]:
+    """
+    Add messages to the conversation and return the whole, trimmed thread. The read,
+    append and write happen under the session lock, so two quick messages cannot
+    overwrite each other. The oldest messages are dropped beyond max_messages.
+    """
+    with session_lock(session_id):
+        if not _working_path(session_id).exists():
+            raise SessionNotFoundError(session_id)
+        thread = get_chat(session_id) + list(messages)
+        if len(thread) > max_messages:
+            thread = thread[-max_messages:]
+        _atomic_write_text(json.dumps(thread, indent=2, default=str), _chat_path(session_id))
+        return thread
+
+
+def clear_chat(session_id: str) -> None:
+    """Delete the stored conversation. Safe to call when there is none."""
+    with session_lock(session_id):
+        _unlink(_chat_path(session_id))
+
 
 _SESSION_FILE = re.compile(
-    r"^([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(?:_snap|_report)?$",
+    r"^([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(?:_snap|_report|_chat)?$",
     re.IGNORECASE,
 )
 

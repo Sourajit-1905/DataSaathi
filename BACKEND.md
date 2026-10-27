@@ -546,3 +546,42 @@ The final backend-wide pass. It adds no features; it makes existing functionalit
 
 
 
+# BACKEND STAGE 10B — AI Chat
+
+## What this stage is
+
+The conversational layer built on Stage 10's shared Gemini client. It explains and advises using existing analysis results without performing new analysis, with rule-based fallbacks for every answer.
+
+## What it does
+
+- **Chat** — answers dataset questions and maintains session-based conversation history
+- **Insights** — generates structured insight cards from profiling, cleaning, EDA, statistics, NLP, and ML strategy
+- **Explain** — explains columns, test results, cleaning steps, transformations, and statistical terms
+- **Summarize** — summarizes completed analysis using Stage 9's executive-summary machinery
+- **Suggestions** — provides context-aware starter questions without Gemini calls
+- **Status** — reports whether Gemini is configured, cooling down, or in rule-based mode
+- **Data privacy** — sends only column names, counts, and computed statistics to Gemini, never raw rows or cell values
+
+## Where it's used
+
+- **AI Chat page** — conversation thread, history, clearing, suggestions, insight cards, and status badge
+- **Column drawer** — contextual explanations through the Explain feature
+- **Statistics results** — plain-English explanations of test results
+- **Report page** — analysis summaries through the Summarize feature
+
+## Files in this stage
+
+1. **Chat storage plumbing** — updates to `core/config.py`, `services/session_service.py`, and `main.py` for chat cleanup on reset, expiry, and session deletion
+2. `services/ai_service.py` — context building, rule-based answers, insights, explanations, and orchestration
+3. **Prompt templates** — `prompts/chat.txt`, `prompts/ai_insights.txt`, and `prompts/ai_explain.txt`; summarization reuses `report_summary.txt`
+4. `routers/ai.py` — 8 endpoints: `chat`, `history`, `clear`, `insights`, `explain`, `summarize`, `suggestions`, and `status`
+5. `models/schemas.py` — updated with AI schemas
+6. `tests/test_ai.py` — verification tests
+
+## Key Design Principles
+
+- **No new analysis** — reuses results from earlier stages
+- **Reliable fallback** — rule-based responses when Gemini is unavailable
+- **Session persistence** — maintains chat history across page reloads
+- **Privacy-first context** — never sends raw dataset rows or cell values to Gemini
+- **Lifecycle cleanup** — removes chat files when sessions are reset, expired, or deleted

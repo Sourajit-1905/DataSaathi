@@ -58,5 +58,10 @@ class Settings(BaseSettings):
     def reports_path(self) -> Path:
         return self.upload_path / "reports"
 
+    @property
+    def chat_path(self) -> Path:
+        return self.upload_path / "chat"
+
+
 
 settings = Settings()

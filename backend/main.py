@@ -58,6 +58,7 @@ async def lifespan(app: FastAPI):
         settings.history_path,
         settings.snapshots_path,
         settings.reports_path,
+        settings.chat_path,
     ]:
         path.mkdir(parents=True, exist_ok=True)
 
