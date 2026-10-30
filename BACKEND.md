@@ -492,7 +492,7 @@ The packaging stage. It collects results from Stages 2–8, assembles them into 
 
 
 
-# BACKEND STAGE 10 — Hardening and Cross-Cutting Concerns
+# BACKEND STAGE 10A — Hardening and Cross-Cutting Concerns
 
 ## What this stage is
 
@@ -585,3 +585,11 @@ The conversational layer built on Stage 10's shared Gemini client. It explains a
 - **Session persistence** — maintains chat history across page reloads
 - **Privacy-first context** — never sends raw dataset rows or cell values to Gemini
 - **Lifecycle cleanup** — removes chat files when sessions are reset, expired, or deleted
+
+
+
+
+
+
+
+
