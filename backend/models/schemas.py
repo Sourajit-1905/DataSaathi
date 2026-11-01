@@ -832,7 +832,94 @@ class ReportHistoryExport(BaseModel):
 
 
 
+#   AI Assistant / Stage 10B  
 
+class ChatRequest(BaseModel):
+    message: str
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+    source: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+class ChatResponse(BaseModel):
+    session_id: str
+    answer: str
+    source: str
+    suggested_tab: Optional[str] = None
+    thread_length: int
+
+
+class ChatHistoryResponse(BaseModel):
+    session_id: str
+    messages: list[ChatMessage]
+    total_messages: int
+
+
+class ChatClearResponse(BaseModel):
+    session_id: str
+    status: str
+    message: str
+
+
+class InsightCard(BaseModel):
+    kind: str
+    stage: str
+    tab: Optional[str] = None
+    title: str
+    body: str
+
+
+class AIInsightsResponse(BaseModel):
+    session_id: str
+    fingerprint: str
+    cards: list[InsightCard]
+    source: str
+    generated_at: str
+
+
+class ExplainRequest(BaseModel):
+    kind: str = "term"
+    target: str
+    extra: Optional[dict[str, Any]] = None
+
+
+class ExplainResponse(BaseModel):
+    session_id: str
+    kind: str
+    target: str
+    explanation: str
+    source: str
+
+
+class SummarizeResponse(BaseModel):
+    session_id: str
+    summary: str
+    highlights: list[str]
+    source: str
+
+
+class SuggestionChip(BaseModel):
+    text: str
+    intent: str
+
+
+class SuggestionsResponse(BaseModel):
+    session_id: str
+    suggestions: list[SuggestionChip]
+
+
+class AIStatusResponse(BaseModel):
+    ai_enabled: bool
+    configured: bool
+    sdk_installed: bool
+    cooling_down: bool
+    retry_after_seconds: int
+    model: Optional[str] = None
+    mode: str
 
 
 
