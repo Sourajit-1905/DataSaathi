@@ -320,7 +320,6 @@ def _rule_based_reply(question: str, ctx: dict) -> str:
 
 
 # Chat
-
 async def chat(
     session_id: str,
     question: str,
@@ -353,9 +352,9 @@ async def chat(
 
     prompt = render_prompt(
         "chat.txt",
-        CONTEXT=json.dumps(ctx, indent=2, default=str),
-        CONVERSATION=json.dumps(conversation, indent=2),
-        QUESTION=question,
+        CONTEXT=_defang(json.dumps(ctx, indent=2, default=str)),
+        CONVERSATION=_defang(json.dumps(conversation, indent=2)),
+        QUESTION=_defang(question),
     )
     parsed = None
     if prompt:
@@ -378,10 +377,9 @@ async def chat(
     return {
         "answer": answer,
         "source": source,
-        "suggested_tab": _clean_tab(parsed.get("suggested_tab")) if source == "gemini" else _suggest_tab(ctx, question),
+        "suggested_tab": _clean_tab(parsed.get("suggested_tab")) if source == "gemini" and parsed else _suggest_tab(ctx, question),
         "thread_length": len(thread),
     }
-
 
 def _suggest_tab(ctx: dict, question: str) -> str | None:
     """Very cheap tab suggestion from the same intent classifier, for the rule-based path."""
@@ -452,7 +450,6 @@ def _build_insight_cards(session_id: str, ctx: dict) -> list[dict]:
 
     return cards
 
-
 async def get_insights(session_id: str, df=None, refresh: bool = False) -> dict:
     """
     Return structured insight cards. Results are cached by a fingerprint of the
@@ -469,17 +466,19 @@ async def get_insights(session_id: str, df=None, refresh: bool = False) -> dict:
 
     prompt = render_prompt(
         "ai_insights.txt",
-        CONTEXT=json.dumps(ctx, indent=2, default=str),
+        CONTEXT=_defang(json.dumps(ctx, indent=2, default=str)),
     )
     if prompt:
-        try: parsed = await generate_json(prompt)
+        try:
+            parsed = await generate_json(prompt)
         except Exception as _e:
             logger.warning(f"Gemini insights call failed: {_e}")
             parsed = None
         if parsed and isinstance(parsed.get("cards"), list) and len(parsed["cards"]) >= 1:
-            raw_cards = parsed["cards"][:10]
             validated = []
-            for c in raw_cards:
+            for c in parsed["cards"][:10]:
+                if not isinstance(c, dict):
+                    continue
                 if isinstance(c.get("title"), str) and isinstance(c.get("body"), str):
                     validated.append({
                         "kind": _pick(c.get("kind"), VALID_KINDS, "insight"),
@@ -567,7 +566,6 @@ def _rule_based_explain(kind: str, target: str, ctx: dict) -> str:
 
     return f"I don't have a built-in explanation for '{target}'. Enable AI for a detailed plain-English explanation."
 
-
 async def explain(
     session_id: str,
     kind: str,
@@ -590,9 +588,9 @@ async def explain(
     prompt = render_prompt(
         "ai_explain.txt",
         KIND=kind,
-        TARGET=target,
-        EXTRA=json.dumps(extra or {}, indent=2, default=str),
-        CONTEXT=json.dumps(ctx, indent=2, default=str),
+        TARGET=_defang(target),
+        EXTRA=_defang(json.dumps(extra or {}, indent=2, default=str)),
+        CONTEXT=_defang(json.dumps(ctx, indent=2, default=str)),
     )
     if prompt:
         try:
@@ -604,7 +602,6 @@ async def explain(
             return {"explanation": parsed["explanation"].strip(), "source": "gemini"}
 
     return {"explanation": rule_text, "source": "rule_based"}
-
 
 # Summarize (delegates to Stage 9)
 
