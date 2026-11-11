@@ -1,22 +1,47 @@
 import { NavLink, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import {
+  Upload,
+  ScanSearch,
+  Eraser,
+  Shuffle,
+  BarChart2,
+  FlaskConical,
+  MessageSquare,
+  Bot,
+  FileText,
+  Sparkles,
+  RotateCcw,
+  CheckCircle,
+  Loader2,
+} from "lucide-react";
 import { useSession } from "../context/SessionContext";
 import ConfirmModal from "./ConfirmModal";
-import { useState } from "react";
 import { datasetAPI } from "../api/api";
 import { toast } from "react-toastify";
 
 const NAV = [
-  { to: "/upload", icon: "📤", label: "Upload", always: true },
-  { to: "/profile", icon: "🔍", label: "Profile", stage: "profile" },
-  { to: "/clean", icon: "🧹", label: "Clean", stage: "clean" },
-  { to: "/transform", icon: "🔄", label: "Transform", stage: "transform" },
-  { to: "/eda", icon: "📊", label: "Explore", stage: "eda" },
-  { to: "/stats", icon: "📐", label: "Statistics", stage: "stats" },
-  { to: "/nlp", icon: "💬", label: "NLP", stage: "nlp" },
-  { to: "/ml", icon: "🤖", label: "ML Strategy", stage: "ml" },
-  { to: "/report", icon: "📋", label: "Report", stage: "report" },
-  { to: "/ai", icon: "✨", label: "AI Assistant", always: true },
+  { to: "/upload", Icon: Upload, label: "Upload", always: true },
+  { to: "/profile", Icon: ScanSearch, label: "Profile", stage: "profile" },
+  { to: "/clean", Icon: Eraser, label: "Clean", stage: "clean" },
+  { to: "/transform", Icon: Shuffle, label: "Transform", stage: "transform" },
+  { to: "/eda", Icon: BarChart2, label: "Explore", stage: "eda" },
+  { to: "/stats", Icon: FlaskConical, label: "Statistics", stage: "stats" },
+  { to: "/nlp", Icon: MessageSquare, label: "NLP", stage: "nlp" },
+  { to: "/ml", Icon: Bot, label: "ML Strategy", stage: "ml" },
+  { to: "/report", Icon: FileText, label: "Report", stage: "report" },
+  { to: "/ai", Icon: Sparkles, label: "AI Assistant", always: true },
 ];
+
+function StageIcon({ status }) {
+  if (status === "completed")
+    return <CheckCircle className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />;
+  if (status === "in_progress")
+    return (
+      <Loader2 className="h-3.5 w-3.5 text-blue-400 animate-spin flex-shrink-0" />
+    );
+  return null;
+}
 
 export default function Sidebar({ open, onClose }) {
   const { sessionId, uploadMeta, stageStatus, clearSession } = useSession();
@@ -43,6 +68,7 @@ export default function Sidebar({ open, onClose }) {
           onClick={onClose}
         />
       )}
+
       <aside
         className={`
         fixed inset-y-0 left-0 z-30 w-56 bg-white border-r border-gray-200
@@ -53,7 +79,7 @@ export default function Sidebar({ open, onClose }) {
       >
         <div className="h-14 flex items-center px-4 border-b border-gray-100 flex-shrink-0">
           <span className="text-lg font-bold text-blue-600">DataSaathi</span>
-          <span className="ml-1 text-xs text-gray-400">AI</span>
+          <span className="ml-1 text-xs text-gray-400 font-medium">AI</span>
         </div>
 
         {uploadMeta && (
@@ -69,16 +95,18 @@ export default function Sidebar({ open, onClose }) {
         )}
 
         <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
-          {NAV.map(({ to, icon, label, stage, always }) => {
+          {NAV.map(({ to, Icon, label, stage, always }) => {
             const locked = !always && !sessionId;
-            const done = stage && stageStatus[stage];
+            const status = stage ? stageStatus[stage] : null;
             return (
               <NavLink
                 key={to}
                 to={locked ? "#" : to}
                 onClick={locked ? (e) => e.preventDefault() : onClose}
+                aria-disabled={locked}
                 className={({ isActive }) => `
-                  flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+                  flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium
+                  transition-colors select-none
                   ${
                     locked
                       ? "opacity-40 cursor-not-allowed text-gray-400"
@@ -87,13 +115,10 @@ export default function Sidebar({ open, onClose }) {
                         : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                   }
                 `}
-                aria-disabled={locked}
               >
-                <span className="text-base w-5 text-center flex-shrink-0">
-                  {icon}
-                </span>
+                <Icon className="h-4 w-4 flex-shrink-0" />
                 <span className="flex-1">{label}</span>
-                {done && <span className="text-green-500 text-xs">✓</span>}
+                {status && <StageIcon status={status} />}
               </NavLink>
             );
           })}
@@ -103,9 +128,11 @@ export default function Sidebar({ open, onClose }) {
           <div className="border-t border-gray-100 px-3 py-3 flex-shrink-0">
             <button
               onClick={() => setShowReset(true)}
-              className="w-full text-left text-xs text-red-500 hover:text-red-700 py-1.5 px-2 rounded hover:bg-red-50 transition-colors"
+              className="w-full flex items-center gap-2 text-xs text-red-500
+                         hover:text-red-700 py-1.5 px-2 rounded hover:bg-red-50 transition-colors"
             >
-              🔁 Reset dataset
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reset dataset
             </button>
           </div>
         )}
