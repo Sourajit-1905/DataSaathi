@@ -1,33 +1,29 @@
-import axios from "axios";
-import { toast } from "react-toastify";
+import axios from 'axios';
+import { toast } from 'react-toastify';
 
-const client = axios.create({ baseURL: "/api", timeout: 120_000 });
+const client = axios.create({ baseURL: '/api', timeout: 120_000 });
 
 client.interceptors.response.use(
     (res) => res.data,
     (err) => {
-        if (err.code === "ECONNABORTED" || err.code === "ERR_NETWORK") {
-            toast.error(
-                "Server not responding — is the backend running on port 8000?",
-            );
+        if (err.code === 'ECONNABORTED' || err.code === 'ERR_NETWORK') {
+            toast.error('Server not responding — is the backend running on port 8000?');
         }
         const data = err.response?.data ?? {};
         return Promise.reject({
             status: err.response?.status,
-            error: data.error ?? data.detail ?? "Something went wrong",
-            detail: data.detail ?? "",
+            error: data.error ?? data.detail ?? 'Something went wrong',
+            detail: data.detail ?? '',
             code: data.code ?? err.response?.status,
         });
-    },
+    }
 );
 
 export const datasetAPI = {
     upload: (file) => {
         const fd = new FormData();
-        fd.append("file", file);
-        return client.post("/dataset/upload", fd, {
-            headers: { "Content-Type": "multipart/form-data" },
-        });
+        fd.append('file', file);
+        return client.post('/dataset/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
     },
     preview: (sid) => client.get(`/dataset/${sid}/preview`),
     info: (sid) => client.get(`/dataset/${sid}/info`),
@@ -40,8 +36,7 @@ export const profileAPI = {
 };
 
 export const cleanAPI = {
-    recommend: (sid, issueType) =>
-        client.get(`/clean/${sid}/recommend/${issueType}`),
+    recommend: (sid, issueType) => client.get(`/clean/${sid}/recommend/${issueType}`),
     preview: (sid, body) => client.post(`/clean/${sid}/preview`, body),
     apply: (sid, body) => client.post(`/clean/${sid}/apply`, body),
     undo: (sid) => client.post(`/clean/${sid}/undo`),
@@ -92,10 +87,9 @@ export const aiAPI = {
     chat: (sid, message) => client.post(`/ai/${sid}/chat`, { message }),
     history: (sid) => client.get(`/ai/${sid}/history`),
     clear: (sid) => client.post(`/ai/${sid}/clear`),
-    insights: (sid, refresh) =>
-        client.get(`/ai/${sid}/insights`, { params: { refresh } }),
+    insights: (sid, refresh) => client.get(`/ai/${sid}/insights`, { params: { refresh } }),
     explain: (sid, body) => client.post(`/ai/${sid}/explain`, body),
     summarize: (sid) => client.get(`/ai/${sid}/summarize`),
     suggestions: (sid) => client.get(`/ai/${sid}/suggestions`),
-    status: () => client.get("/ai/status"),
+    status: () => client.get('/ai/status'),
 };
