@@ -29,3 +29,30 @@ Full dataset upload experience with drag-and-drop, client-side validation, file 
 4. `src/components/Header.jsx` — Lucide icons for AI status dot
 5. `src/pages/Upload.jsx` — full upload page
 6. `src/api/api.js` — single consolidated API file (delete `client.js` and `index.js` after adding this)
+
+
+# Stage 3 — Profile Page
+
+## What
+
+Runs the backend profiling endpoint and displays a full dataset health report: quality score, missing values, outliers, duplicates, skewness, cardinality, potential targets, and AI insights. Each column opens a detail drawer.
+
+## What it does
+
+- Calls `POST /api/profile/{sid}/run` and shows a loading state
+- Quality score ring (0–100) with colour coding
+- Summary cards: rows, columns, missing, duplicates
+- Per-column table with dtype, missing%, outlier count, skewness, cardinality
+- Click any row → slide-in drawer with frequency bar chart and full stats
+- AI insights panel (from the profile response)
+- Marks stage `completed` and sets `clean` to `in_progress` on success
+
+## Where used
+
+`/profile` route.
+
+## Files in this stage
+
+1. `src/pages/Profile.jsx` — full page
+2. `src/components/charts/FrequencyBarChart.jsx` — Recharts bar chart for column value counts
+3. `src/components/ColumnDrawer.jsx` — slide-in detail panel
